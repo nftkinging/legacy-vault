@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Legacy Vault — a letter that opens only if you stop answering</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #EDE4CF;
+    --paper-deep: #E2D6B9;
+    --ink: #20291F;
+    --ink-soft: #5C6353;
+    --seal: #7E2B24;
+    --seal-dark: #5C1F1A;
+    --gilt: #8C6F3F;
+    --ok: #4C6B3C;
+    --serif: 'Cormorant Garamond', Georgia, serif;
+    --mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    background-image:
+      radial-gradient(ellipse at 50% -10%, rgba(140,111,63,0.14), transparent 55%),
+      radial-gradient(ellipse at 90% 110%, rgba(126,43,36,0.06), transparent 50%);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 18px;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 44px 20px 90px; }
+
+  /* ---------- masthead ---------- */
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.28em;
+    text-transform: uppercase; color: var(--gilt); text-align: center; margin-bottom: 14px;
+  }
+  h1 {
+    font-size: 52px; font-weight: 600; text-align: center;
+    margin: 0 0 6px; letter-spacing: 0.01em;
+  }
+  .tagline {
+    text-align: center; font-style: italic; color: var(--ink-soft);
+    margin: 0 auto 8px; max-width: 46ch; font-size: 20px;
+  }
+  .rule {
+    width: 120px; margin: 22px auto; border: 0; height: 13px;
+    background:
+      linear-gradient(var(--gilt), var(--gilt)) center 2px / 100% 1px no-repeat,
+      linear-gradient(var(--gilt), var(--gilt)) center 10px / 60% 1px no-repeat;
+  }
+
+  /* ---------- wallet strip ---------- */
+  .wallet {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-soft);
+    border-top: 1px solid var(--gilt); border-bottom: 1px solid var(--gilt);
+    padding: 10px 4px; margin-bottom: 34px;
+  }
+  .wallet .addr { letter-spacing: 0.02em; }
+
+  /* ---------- buttons ---------- */
+  button {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
+    text-transform: uppercase; cursor: pointer;
+    background: var(--ink); color: var(--paper);
+    border: 1px solid var(--ink);
+    padding: 11px 20px; border-radius: 2px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  button:hover { background: transparent; color: var(--ink); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.seal-btn { background: var(--seal); border-color: var(--seal); }
+  button.seal-btn:hover { background: transparent; color: var(--seal); }
+  button.quiet { background: transparent; color: var(--ink-soft); border-color: var(--ink-soft); }
+  button.quiet:hover { color: var(--ink); border-color: var(--ink); }
+  button:focus-visible, input:focus, textarea:focus, select:focus { outline: 2px solid var(--seal); outline-offset: 2px; }
+
+  /* ---------- tabs ---------- */
+  .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: 30px; }
+  .tab {
+    font-family: var(--serif); font-size: 21px; font-style: italic;
+    background: none; border: none; color: var(--ink-soft);
+    padding: 6px 22px; text-transform: none; letter-spacing: 0;
+    border-bottom: 1px solid transparent;
+  }
+  .tab:hover { background: none; color: var(--ink); }
+  .tab.active { color: var(--ink); border-bottom: 1px solid var(--seal); font-weight: 600; }
+
+  /* ---------- the document card ---------- */
+  .doc {
+    border: 1px solid var(--ink);
+    outline: 1px solid var(--gilt);
+    outline-offset: 5px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 120px);
+    padding: 34px 30px;
+    margin: 12px 6px 26px;
+  }
+  .doc h2 {
+    font-size: 15px; font-family: var(--mono); font-weight: 500;
+    letter-spacing: 0.24em; text-transform: uppercase;
+    text-align: center; margin: 0 0 24px; color: var(--gilt);
+  }
+
+  label {
+    display: block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-soft); margin: 20px 0 6px;
+  }
+  input, select, textarea {
+    width: 100%; background: rgba(255,255,255,0.4);
+    border: 1px solid var(--ink-soft); border-radius: 2px;
+    font-family: var(--mono); font-size: 14px; color: var(--ink);
+    padding: 10px 12px;
+  }
+  textarea { font-family: var(--serif); font-size: 18px; min-height: 110px; resize: vertical; }
+  .inline { display: flex; gap: 10px; }
+  .inline > * { flex: 1; }
+
+  .actions { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+
+  /* ---------- vault status ---------- */
+  .seal-stage { display: flex; flex-direction: column; align-items: center; margin: 6px 0 18px; }
+  .countdown {
+    font-family: var(--serif); font-size: 44px; font-weight: 600;
+    letter-spacing: 0.04em; margin-top: 10px; font-variant-numeric: tabular-nums;
+  }
+  .countdown.due { color: var(--seal); }
+  .count-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.26em;
+    text-transform: uppercase; color: var(--ink-soft); margin-top: 2px;
+  }
+  .facts {
+    margin: 22px 0 0; padding: 0; list-style: none;
+    border-top: 1px solid var(--paper-deep);
+  }
+  .facts li {
+    display: flex; justify-content: space-between; gap: 14px;
+    padding: 9px 2px; border-bottom: 1px solid var(--paper-deep);
+    font-size: 16px;
+  }
+  .facts .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft); padding-top: 4px; }
+  .facts .v { font-family: var(--mono); font-size: 13px; text-align: right; word-break: break-all; }
+
+  /* ---------- the letter ---------- */
+  .letter {
+    margin-top: 24px; padding: 22px 24px;
+    background: rgba(255,255,255,0.45);
+    border: 1px solid var(--paper-deep);
+    font-size: 19px; font-style: italic; line-height: 1.7;
+    position: relative; word-break: break-word;
+  }
+  .letter.sealed { filter: blur(6px); user-select: none; pointer-events: none; }
+  .letter-frame { position: relative; }
+  .sealed-note {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--seal);
+  }
+
+  .msg-line { font-family: var(--mono); font-size: 12.5px; margin-top: 16px; text-align: center; min-height: 18px; }
+  .msg-line.err { color: var(--seal); }
+  .msg-line.ok { color: var(--ok); }
+
+  .beneficiary-list { list-style: none; margin: 10px 0 0; padding: 0; }
+  .beneficiary-list button { width: 100%; margin-bottom: 8px; text-transform: none; letter-spacing: 0.03em; }
+
+  footer {
+    text-align: center; font-family: var(--mono); font-size: 11px;
+    color: var(--ink-soft); letter-spacing: 0.06em; margin-top: 44px;
+  }
+  footer a { color: var(--gilt); }
+
+  @media (max-width: 520px) {
+    h1 { font-size: 38px; }
+    .doc { padding: 26px 18px; }
+    .countdown { font-size: 34px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">Recorded on BOT Chain &middot; No custodian &middot; No executor</div>
+  <h1>Legacy Vault</h1>
+  <p class="tagline">A letter, and what you leave with it, that opens only if you stop answering.</p>
+  <hr class="rule" />
+
+  <div class="wallet">
+    <span id="walletStatus">Wallet not connected</span>
+    <span class="addr" id="walletAddr"></span>
+    <button id="connectBtn" class="quiet">Connect wallet</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" id="tabLeave">Leave a legacy</button>
+    <button class="tab" id="tabClaim">Claim a legacy</button>
+  </div>
+
+  <!-- ============ LEAVE ============ -->
+  <section id="leavePane">
+
+    <div class="doc" id="createDoc">
+      <h2>Establish your vault</h2>
+
+      <label for="benInput">Beneficiary address</label>
+      <input id="benInput" placeholder="0x..." autocomplete="off" />
+
+      <label for="amtInput">BOT to lock away</label>
+      <input id="amtInput" type="number" min="0" step="0.001" placeholder="0.05" />
+
+      <label>Silence allowed before it unlocks</label>
+      <div class="inline">
+        <input id="intervalNum" type="number" min="1" step="1" value="5" />
+        <select id="intervalUnit">
+          <option value="60">minutes</option>
+          <option value="3600">hours</option>
+          <option value="86400">days</option>
+        </select>
+      </div>
+
+      <label for="msgInput">The letter</label>
+      <textarea id="msgInput" placeholder="If you are reading this, I have gone quiet..."></textarea>
+
+      <div class="actions">
+        <button class="seal-btn" id="createBtn" disabled>Seal the vault</button>
+      </div>
+      <div class="msg-line" id="createMsg"></div>
+    </div>
+
+    <div class="doc" id="vaultDoc" style="display:none;">
+      <h2>Your standing vault</h2>
+
+      <div class="seal-stage">
+        <div id="ownerSeal"></div>
+        <div class="countdown" id="ownerCountdown">—</div>
+        <div class="count-label" id="ownerCountLabel">silence remaining before it unlocks</div>
+      </div>
+
+      <ul class="facts">
+        <li><span class="k">Locked</span><span class="v" id="fBalance">—</span></li>
+        <li><span class="k">Beneficiary</span><span class="v" id="fBeneficiary">—</span></li>
+        <li><span class="k">Last check-in</span><span class="v" id="fLastCheckIn">—</span></li>
+        <li><span class="k">Allowed silence</span><span class="v" id="fInterval">—</span></li>
+      </ul>
+
+      <div class="actions">
+        <button class="seal-btn" id="checkInBtn">I'm still here</button>
+        <button id="depositBtn">Add funds</button>
+        <button class="quiet" id="withdrawBtn">Withdraw</button>
+      </div>
+      <div class="msg-line" id="ownerMsg"></div>
+    </div>
+
+  </section>
+
+  <!-- ============ CLAIM ============ -->
+  <section id="claimPane" style="display:none;">
+    <div class="doc">
+      <h2>Letters addressed to you</h2>
+
+      <div class="actions" style="margin-top:0;">
+        <button id="findBtn" disabled>Find vaults naming me</button>
+      </div>
+      <ul class="beneficiary-list" id="ownerList"></ul>
+
+      <label for="ownerLookup">Or look up a vault by its owner's address</label>
+      <input id="ownerLookup" placeholder="0x..." autocomplete="off" />
+      <div class="actions">
+        <button class="quiet" id="lookupBtn" disabled>Open the record</button>
+      </div>
+
+      <div id="claimView" style="display:none;">
+        <div class="seal-stage" style="margin-top:26px;">
+          <div id="claimSeal"></div>
+          <div class="countdown" id="claimCountdown">—</div>
+          <div class="count-label" id="claimCountLabel">until the seal may be broken</div>
+        </div>
+
+        <ul class="facts">
+          <li><span class="k">Left behind</span><span class="v" id="cBalance">—</span></li>
+          <li><span class="k">For</span><span class="v" id="cBeneficiary">—</span></li>
+          <li><span class="k">Owner last seen</span><span class="v" id="cLastCheckIn">—</span></li>
+        </ul>
+
+        <div class="letter-frame">
+          <div class="letter" id="claimLetter"></div>
+          <div class="sealed-note" id="sealedNote" style="display:none;">Still sealed</div>
+        </div>
+
+        <div class="actions">
+          <button class="seal-btn" id="claimBtn" disabled>Break the seal &amp; claim</button>
+        </div>
+      </div>
+      <div class="msg-line" id="claimMsg"></div>
+    </div>
+  </section>
+
+  <footer>
+    LegacyVault.sol on BOT Chain testnet (chain 968) &middot;
+    <a id="explorerLink" href="#" target="_blank" rel="noopener">view contract on explorer</a>
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
+<script>
+  // ---- CONFIG: fill in after deployment ----
+  const CONTRACT_ADDRESS = "0x688C6810e0aa07e26941cEaC1972c7d3Be8820c9";
+  const CHAIN_ID_HEX = "0x3C8"; // 968
+  const NETWORK_PARAMS = {
+    chainId: CHAIN_ID_HEX,
+    chainName: "BOT Chain Testnet",
+    nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
+    rpcUrls: ["https://rpc.bohr.life"],
+    blockExplorerUrls: ["https://scan.bohr.life/"]
+  };
+  const ABI = [
+    "function createVault(address _beneficiary, uint256 _checkInInterval, string _message) external payable",
+    "function checkIn() external",
+    "function deposit() external payable",
+    "function updateMessage(string _message) external",
+    "function withdraw(uint256 _amount) external",
+    "function claim(address _owner) external",
+    "function getVault(address _owner) external view returns (address beneficiary, uint256 balance, uint256 checkInInterval, uint256 lastCheckIn, string message, bool claimable)",
+    "function timeUntilClaimable(address _owner) external view returns (uint256)",
+    "function vaultsLeftFor(address _beneficiary) external view returns (address[])"
+  ];
+  // -------------------------------------------
+
+  document.getElementById('explorerLink').href = `https://scan.bohr.life/address/${CONTRACT_ADDRESS}`;
+
+  const $ = id => document.getElementById(id);
+  let provider, signer, contract, readContract, myAddress;
+  let ownerDeadline = null, claimDeadline = null, claimTargetOwner = null;
+
+  // ---------- wax seal SVG ----------
+  function sealSVG(cracked, size = 84) {
+    const fill = cracked ? '#8a8578' : 'var(--seal)';
+    const inner = cracked ? '#6f6a5e' : 'var(--seal-dark)';
+    const cracks = cracked ? `
+      <path d="M42 12 L38 34 L46 44 L40 62" stroke="#3f3b33" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <path d="M16 40 L34 42 M52 46 L70 38" stroke="#3f3b33" stroke-width="1.4" fill="none" stroke-linecap="round"/>` : '';
+    return `
+    <svg width="${size}" height="${size}" viewBox="0 0 84 84" role="img" aria-label="${cracked ? 'Broken wax seal' : 'Intact wax seal'}">
+      <g>
+        <circle cx="42" cy="42" r="30" fill="${fill}"/>
+        <circle cx="24" cy="28" r="9" fill="${fill}"/>
+        <circle cx="60" cy="26" r="8" fill="${fill}"/>
+        <circle cx="65" cy="52" r="9" fill="${fill}"/>
+        <circle cx="30" cy="63" r="8" fill="${fill}"/>
+        <circle cx="14" cy="48" r="6" fill="${fill}"/>
+        <circle cx="50" cy="68" r="6" fill="${fill}"/>
+        <circle cx="42" cy="42" r="22" fill="none" stroke="${inner}" stroke-width="1.5"/>
+        <text x="42" y="50" text-anchor="middle" font-family="Cormorant Garamond, serif" font-size="22" font-weight="600" fill="${cracked ? '#4a463d' : '#EDE4CF'}">LV</text>
+        ${cracks}
+      </g>
+    </svg>`;
+  }
+
+  // ---------- helpers ----------
+  const short = a => a.slice(0, 6) + '…' + a.slice(-4);
+  const fmtBOT = wei => ethers.formatEther(wei) + ' BOT';
+  const fmtDate = ts => new Date(Number(ts) * 1000).toLocaleString();
+  function fmtInterval(s) {
+    s = Number(s);
+    if (s % 86400 === 0) return (s / 86400) + ' day(s)';
+    if (s % 3600 === 0) return (s / 3600) + ' hour(s)';
+    if (s % 60 === 0) return (s / 60) + ' minute(s)';
+    return s + ' s';
+  }
+  function fmtCountdown(secs) {
+    if (secs <= 0) return '00:00:00';
+    const d = Math.floor(secs / 86400);
+    const h = String(Math.floor((secs % 86400) / 3600)).padStart(2, '0');
+    const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0');
+    const sec = String(Math.floor(secs % 60)).padStart(2, '0');
+    return (d > 0 ? d + 'd ' : '') + `${h}:${m}:${sec}`;
+  }
+  function note(el, text, cls) { el.textContent = text; el.className = 'msg-line' + (cls ? ' ' + cls : ''); }
+
+  // ---------- wallet ----------
+  async function ensureNetwork() {
+    try {
+      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_ID_HEX }] });
+    } catch (e) {
+      if (e.code === 4902) {
+        await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
+      } else throw e;
+    }
+  }
+
+  async function connect() {
+    if (!window.ethereum) { note($('createMsg'), 'No wallet found — install MetaMask to continue.', 'err'); return; }
+    try {
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      await ensureNetwork();
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+      myAddress = await signer.getAddress();
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+      $('walletStatus').textContent = 'Connected · BOT Chain Testnet';
+      $('walletAddr').textContent = short(myAddress);
+      $('connectBtn').textContent = 'Connected';
+      $('connectBtn').disabled = true;
+      $('createBtn').disabled = false;
+      $('findBtn').disabled = false;
+      $('lookupBtn').disabled = false;
+
+      await refreshOwnerVault();
+    } catch (err) {
+      console.error(err);
+      note($('createMsg'), err.shortMessage || err.message || 'Connection failed', 'err');
+    }
+  }
+
+  function getReadContract() {
+    if (contract) return contract;
+    if (!readContract) {
+      readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, new ethers.JsonRpcProvider(NETWORK_PARAMS.rpcUrls[0]));
+    }
+    return readContract;
+  }
+
+  // ---------- owner side ----------
+  async function refreshOwnerVault() {
+    try {
+      const v = await contract.getVault(myAddress);
+      // vault exists
+      $('createDoc').style.display = 'none';
+      $('vaultDoc').style.display = 'block';
+      $('fBalance').textContent = fmtBOT(v.balance);
+      $('fBeneficiary').textContent = v.beneficiary;
+      $('fLastCheckIn').textContent = fmtDate(v.lastCheckIn);
+      $('fInterval').textContent = fmtInterval(v.checkInInterval);
+      ownerDeadline = Number(v.lastCheckIn) + Number(v.checkInInterval);
+      $('ownerSeal').innerHTML = sealSVG(v.claimable);
+    } catch {
+      // no vault yet — show create form
+      $('createDoc').style.display = 'block';
+      $('vaultDoc').style.display = 'none';
+      ownerDeadline = null;
+    }
+  }
+
+  async function createVault() {
+    const ben = $('benInput').value.trim();
+    const amt = $('amtInput').value.trim();
+    const num = parseInt($('intervalNum').value, 10);
+    const unit = parseInt($('intervalUnit').value, 10);
+    const msg = $('msgInput').value.trim();
+    if (!ethers.isAddress(ben)) { note($('createMsg'), 'Enter a valid beneficiary address.', 'err'); return; }
+    if (!amt || Number(amt) <= 0) { note($('createMsg'), 'Enter an amount of BOT to lock.', 'err'); return; }
+    if (!num || num <= 0) { note($('createMsg'), 'Enter a valid silence interval.', 'err'); return; }
+    if (!msg) { note($('createMsg'), 'Write the letter — it is the point.', 'err'); return; }
+    const interval = BigInt(num) * BigInt(unit);
+    $('createBtn').disabled = true;
+    note($('createMsg'), 'Confirm in your wallet…');
+    try {
+      const tx = await contract.createVault(ben, interval, msg, { value: ethers.parseEther(amt) });
+      note($('createMsg'), 'Sealing on-chain…');
+      await tx.wait();
+      note($('createMsg'), 'Vault sealed. Keep checking in.', 'ok');
+      await refreshOwnerVault();
+    } catch (err) {
+      console.error(err);
+      note($('createMsg'), err.shortMessage || err.message || 'Transaction failed', 'err');
+    } finally { $('createBtn').disabled = false; }
+  }
+
+  async function checkIn() {
+    $('checkInBtn').disabled = true;
+    note($('ownerMsg'), 'Confirm in your wallet…');
+    try {
+      const tx = await contract.checkIn();
+      await tx.wait();
+      note($('ownerMsg'), 'Proof of life recorded.', 'ok');
+      await refreshOwnerVault();
+      // RPC can serve stale state right after confirmation — refresh again shortly
+      setTimeout(refreshOwnerVault, 3000);
+      setTimeout(refreshOwnerVault, 8000);
+    } catch (err) {
+      note($('ownerMsg'), err.shortMessage || err.message || 'Failed', 'err');
+    } finally { $('checkInBtn').disabled = false; }
+  }
+
+  async function depositMore() {
+    const amt = prompt('BOT to add:');
+    if (!amt || Number(amt) <= 0) return;
+    note($('ownerMsg'), 'Confirm in your wallet…');
+    try {
+      const tx = await contract.deposit({ value: ethers.parseEther(amt.trim()) });
+      await tx.wait();
+      note($('ownerMsg'), 'Funds added. Timer reset.', 'ok');
+      await refreshOwnerVault();
+    } catch (err) {
+      note($('ownerMsg'), err.shortMessage || err.message || 'Failed', 'err');
+    }
+  }
+
+  async function withdrawSome() {
+    const amt = prompt('BOT to withdraw:');
+    if (!amt || Number(amt) <= 0) return;
+    note($('ownerMsg'), 'Confirm in your wallet…');
+    try {
+      const tx = await contract.withdraw(ethers.parseEther(amt.trim()));
+      await tx.wait();
+      note($('ownerMsg'), 'Withdrawn. Timer reset.', 'ok');
+      await refreshOwnerVault();
+    } catch (err) {
+      note($('ownerMsg'), err.shortMessage || err.message || 'Failed', 'err');
+    }
+  }
+
+  // ---------- beneficiary side ----------
+  async function findMine() {
+    note($('claimMsg'), 'Searching the record…');
+    try {
+      const owners = await getReadContract().vaultsLeftFor(myAddress);
+      const list = $('ownerList');
+      list.innerHTML = '';
+      if (owners.length === 0) {
+        note($('claimMsg'), 'No vault names this address — yet.', '');
+        return;
+      }
+      note($('claimMsg'), owners.length + ' vault(s) name you.', 'ok');
+      owners.forEach(o => {
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.className = 'quiet';
+        b.textContent = 'Open vault of ' + short(o);
+        b.addEventListener('click', () => loadClaimVault(o));
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+    } catch (err) {
+      note($('claimMsg'), err.shortMessage || err.message || 'Lookup failed', 'err');
+    }
+  }
+
+  async function loadClaimVault(owner) {
+    note($('claimMsg'), 'Opening the record…');
+    try {
+      const v = await getReadContract().getVault(owner);
+      claimTargetOwner = owner;
+      claimDeadline = Number(v.lastCheckIn) + Number(v.checkInInterval);
+      $('claimView').style.display = 'block';
+      $('cBalance').textContent = fmtBOT(v.balance);
+      $('cBeneficiary').textContent = v.beneficiary;
+      $('cLastCheckIn').textContent = fmtDate(v.lastCheckIn);
+      $('claimSeal').innerHTML = sealSVG(v.claimable);
+      const letter = $('claimLetter');
+      letter.textContent = v.message;
+      if (v.claimable) {
+        letter.classList.remove('sealed');
+        $('sealedNote').style.display = 'none';
+        $('claimBtn').disabled = !(myAddress && myAddress.toLowerCase() === v.beneficiary.toLowerCase() && v.balance > 0n);
+        note($('claimMsg'), Number(v.balance) === 0 ? 'This vault has already been claimed.' : 'The silence has passed. The seal may be broken.', '');
+      } else {
+        letter.classList.add('sealed');
+        $('sealedNote').style.display = 'flex';
+        $('claimBtn').disabled = true;
+        note($('claimMsg'), 'The owner is still answering. The letter stays sealed.', '');
+      }
+    } catch (err) {
+      $('claimView').style.display = 'none';
+      note($('claimMsg'), 'No vault found at that address.', 'err');
+    }
+  }
+
+  async function doClaim() {
+    if (!claimTargetOwner) return;
+    $('claimBtn').disabled = true;
+    note($('claimMsg'), 'Confirm in your wallet…');
+    try {
+      const tx = await contract.claim(claimTargetOwner);
+      note($('claimMsg'), 'Breaking the seal…');
+      await tx.wait();
+      note($('claimMsg'), 'Claimed. What was left is now yours.', 'ok');
+      await loadClaimVault(claimTargetOwner);
+    } catch (err) {
+      console.error(err);
+      note($('claimMsg'), err.shortMessage || err.message || 'Claim failed', 'err');
+      $('claimBtn').disabled = false;
+    }
+  }
+
+  // ---------- countdown ticker ----------
+  setInterval(() => {
+    const now = Math.floor(Date.now() / 1000);
+    if (ownerDeadline !== null) {
+      const left = ownerDeadline - now;
+      const el = $('ownerCountdown');
+      el.textContent = fmtCountdown(left);
+      el.classList.toggle('due', left <= 0);
+      $('ownerCountLabel').textContent = left <= 0
+        ? 'silence exceeded — your beneficiary may now claim'
+        : 'silence remaining before it unlocks';
+      if (left === 0) refreshOwnerVault();
+    }
+    if (claimDeadline !== null) {
+      const left = claimDeadline - now;
+      const el = $('claimCountdown');
+      el.textContent = fmtCountdown(left);
+      el.classList.toggle('due', left <= 0);
+      $('claimCountLabel').textContent = left <= 0 ? 'the seal may be broken' : 'until the seal may be broken';
+      if (left === 0 && claimTargetOwner) loadClaimVault(claimTargetOwner);
+    }
+  }, 1000);
+
+  // ---------- tabs & wiring ----------
+  $('tabLeave').addEventListener('click', () => {
+    $('tabLeave').classList.add('active'); $('tabClaim').classList.remove('active');
+    $('leavePane').style.display = 'block'; $('claimPane').style.display = 'none';
+  });
+  $('tabClaim').addEventListener('click', () => {
+    $('tabClaim').classList.add('active'); $('tabLeave').classList.remove('active');
+    $('claimPane').style.display = 'block'; $('leavePane').style.display = 'none';
+  });
+  $('connectBtn').addEventListener('click', connect);
+  $('createBtn').addEventListener('click', createVault);
+  $('checkInBtn').addEventListener('click', checkIn);
+  $('depositBtn').addEventListener('click', depositMore);
+  $('withdrawBtn').addEventListener('click', withdrawSome);
+  $('findBtn').addEventListener('click', findMine);
+  $('lookupBtn').addEventListener('click', () => {
+    const a = $('ownerLookup').value.trim();
+    if (!ethers.isAddress(a)) { note($('claimMsg'), 'Enter a valid address.', 'err'); return; }
+    loadClaimVault(a);
+  });
+  $('claimBtn').addEventListener('click', doClaim);
+
+  // initial seals
+  $('ownerSeal').innerHTML = sealSVG(false);
+</script>
+</body>
+</html>

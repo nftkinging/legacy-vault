@@ -1,0 +1,15 @@
+{
+  "name": "legacy-vault",
+  "version": "1.0.0",
+  "description": "A dead man's switch on BOT Chain — lock BOT and a final letter for a beneficiary; if you stop checking in, they inherit it.",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js --network botchainTestnet"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0"
+  }
+}
