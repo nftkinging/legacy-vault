@@ -21,9 +21,20 @@ contract LegacyVaultInvariantTest is Test {
         targetContract(address(handler));
     }
 
-    /// @notice The core accounting invariant: every wei the contract holds
-    ///         is accounted for by exactly one live vault's balance.
-    function invariant_sumOfVaultBalancesEqualsContractBalance() public view {
+    /// @notice The core accounting invariant: every wei tracked across live
+    ///         vaults is backed by the contract's real balance.
+    /// @dev Deliberately `<=`, not `==`. Ether can land on a contract without
+    ///      going through any payable function it defines — selfdestruct
+    ///      (see Handler.forceEther, exercised by the fuzzer itself) or
+    ///      being set as block.coinbase and collecting fees are the two
+    ///      standard routes. That only ever pushes contract.balance *above*
+    ///      the tracked sum, never below, so `<=` still catches the bug that
+    ///      actually matters — some vault's tracked balance exceeding what
+    ///      the contract actually holds — without false-positiving on
+    ///      mainnet the first time stray ether arrives. A strict `==` would
+    ///      break permanently and silently mask real regressions the moment
+    ///      that happened.
+    function invariant_vaultBalancesNeverExceedContractBalance() public view {
         uint256 sum = 0;
         uint256 n = handler.actorsCount();
         for (uint256 i = 0; i < n; i++) {
@@ -32,6 +43,6 @@ contract LegacyVaultInvariantTest is Test {
                 sum += balance;
             } catch {}
         }
-        assertEq(sum, address(vaultContract).balance);
+        assertLe(sum, address(vaultContract).balance);
     }
 }

@@ -3,6 +3,7 @@ pragma solidity 0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {LegacyVault} from "../../contracts/LegacyVault.sol";
+import {EtherForcer} from "./EtherForcer.sol";
 
 /// @dev Fuzz handler for the invariant suite. Bounds every input to
 ///      something the contract could plausibly receive, and randomly drives
@@ -19,6 +20,7 @@ contract Handler is Test {
         for (uint256 i = 0; i < actors.length; i++) {
             vm.deal(actors[i], 1_000 ether);
         }
+        vm.deal(address(this), 1_000 ether); // funds EtherForcer instances below
     }
 
     function _actor(uint256 seed) internal view returns (address) {
@@ -89,6 +91,18 @@ contract Handler is Test {
         (address beneficiary, , , , , ) = vault.getVault(owner);
         vm.prank(beneficiary);
         try vault.claim(owner) {} catch {}
+    }
+
+    /// @dev Simulates ether arriving outside any payable function — the
+    ///      same effect selfdestruct or a coinbase-fee-collecting contract
+    ///      would have. The vault contract must keep working, and the
+    ///      accounting invariant must tolerate contract.balance running
+    ///      ahead of the tracked sum.
+    function forceEther(uint256 amount) external {
+        amount = bound(amount, 0, 5 ether);
+        if (amount == 0) return;
+        EtherForcer forcer = new EtherForcer{value: amount}();
+        forcer.forceSend(payable(address(vault)));
     }
 
     function warp(uint256 secs) external {
