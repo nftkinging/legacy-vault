@@ -30,6 +30,10 @@
     font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted);
   }
   .wallet-compact .addr { letter-spacing: 0.02em; }
+  .wallet-connect-wrap { position: relative; }
+  #walletPickerList { min-width: 220px; }
+  #walletPickerList li { display: flex; align-items: center; gap: var(--space-2); }
+  #walletPickerList img { border-radius: 3px; flex-shrink: 0; }
 
   /* ---------- tabs ---------- */
   .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: var(--space-6); }
@@ -191,7 +195,11 @@
     <div class="wallet-compact">
       <span id="walletStatus">Wallet not connected</span>
       <span class="addr" id="walletAddr"></span>
-      <button id="connectBtn" class="btn-quiet">Connect wallet</button>
+      <div class="wallet-connect-wrap">
+        <button id="connectBtn" class="btn-quiet">Connect wallet</button>
+        <a id="mobileWalletLink" class="btn-quiet" href="#" target="_blank" rel="noopener" style="display:none;">Open in MetaMask</a>
+        <ul class="field-select-list" id="walletPickerList" role="listbox" hidden aria-label="Choose a wallet"></ul>
+      </div>
     </div>
   </header>
 
@@ -688,24 +696,108 @@
     close();
   }
 
-  // ---------- wallet ----------
-  async function ensureNetwork() {
+  // ---------- wallet: EIP-6963 multi-provider discovery ----------
+  // Desktop with two or more wallet extensions installed used to just read
+  // window.ethereum directly, so whichever extension loaded last silently
+  // won. EIP-6963 has every wallet announce itself with a name/icon/uuid
+  // instead of fighting over one global; we collect them all and only ask
+  // the user to pick when there's genuinely more than one.
+  const discoveredProviders = new Map(); // uuid -> { info, provider }
+  window.addEventListener('eip6963:announceProvider', (event) => {
+    const { info, provider } = event.detail;
+    discoveredProviders.set(info.uuid, { info, provider });
+  });
+  window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+  function isMobileUA() { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
+  function metamaskDeepLink() {
+    return `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
+  }
+
+  // Mobile browsers have no injected provider at all — the beneficiary
+  // persona is exactly the person most likely to hit this. Detect it
+  // proactively (not just after a failed connect attempt) and swap the
+  // connect button for a deep link that reopens this page inside
+  // MetaMask's in-app browser, where the provider *is* injected. EIP-6963
+  // announcements are dispatched synchronously in response to the request
+  // event above, so a short grace period is enough to know none arrived.
+  setTimeout(() => {
+    if (discoveredProviders.size === 0 && !window.ethereum && isMobileUA()) {
+      $('connectBtn').style.display = 'none';
+      const link = $('mobileWalletLink');
+      link.href = metamaskDeepLink();
+      link.style.display = 'inline-block';
+    }
+  }, 150);
+
+  async function ensureNetwork(eth) {
     try {
-      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_ID_HEX }] });
+      await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_ID_HEX }] });
     } catch (e) {
       if (e.code === 4902) {
-        await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
+        await eth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
       } else throw e;
     }
   }
 
+  function closeWalletPicker() { $('walletPickerList').hidden = true; }
+
+  function showWalletPicker(providers) {
+    const list = $('walletPickerList');
+    list.innerHTML = '';
+    providers.forEach(({ info, provider }) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.tabIndex = -1;
+      const icon = document.createElement('img');
+      icon.src = info.icon; icon.alt = ''; icon.width = 18; icon.height = 18;
+      const label = document.createElement('span');
+      label.textContent = info.name;
+      li.append(icon, label);
+      const pick = () => { closeWalletPicker(); connectWithProvider(provider); };
+      li.addEventListener('click', pick);
+      li.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
+        else if (e.key === 'Escape') closeWalletPicker();
+      });
+      list.appendChild(li);
+    });
+    list.hidden = false;
+    list.querySelector('li')?.focus();
+  }
+  document.addEventListener('click', e => {
+    const wrap = document.querySelector('.wallet-connect-wrap');
+    if (wrap && !wrap.contains(e.target)) closeWalletPicker();
+  });
+
   async function connect() {
-    if (!window.ethereum) { note($('createMsg'), 'No wallet found — install MetaMask to continue.', 'err'); return; }
+    const providers = Array.from(discoveredProviders.values());
+
+    if (providers.length > 1) { showWalletPicker(providers); return; }
+
+    let eth;
+    if (providers.length === 1) eth = providers[0].provider;
+    else if (window.ethereum) eth = window.ethereum; // legacy, no EIP-6963 support
+    else {
+      if (isMobileUA()) {
+        $('connectBtn').style.display = 'none';
+        const link = $('mobileWalletLink');
+        link.href = metamaskDeepLink();
+        link.style.display = 'inline-block';
+      } else {
+        note($('createMsg'), 'No wallet found — install MetaMask to continue.', 'err');
+      }
+      return;
+    }
+    await connectWithProvider(eth);
+  }
+
+  async function connectWithProvider(eth) {
     setBusy($('connectBtn'), true, 'Connecting…');
     try {
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
-      await ensureNetwork();
-      provider = new ethers.BrowserProvider(window.ethereum);
+      await eth.request({ method: 'eth_requestAccounts' });
+      await ensureNetwork(eth);
+      provider = new ethers.BrowserProvider(eth);
       signer = await provider.getSigner();
       myAddress = await signer.getAddress();
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
