@@ -230,6 +230,12 @@
       <label for="msgInput">The letter</label>
       <textarea id="msgInput" placeholder="If you are reading this, I have gone quiet..."></textarea>
 
+      <label for="passInput">Seal passphrase</label>
+      <input id="passInput" type="password" placeholder="a phrase only your beneficiary will know" autocomplete="off" />
+      <div class="count-label" style="text-align:left; margin-top:6px;">
+        Encrypted client-side before it ever reaches the chain. Share this passphrase with your beneficiary some other way — lose it and the letter is lost, even though the funds remain claimable.
+      </div>
+
       <div class="actions">
         <button class="seal-btn" id="createBtn" disabled>Seal the vault</button>
       </div>
@@ -296,6 +302,11 @@
           <div class="sealed-note" id="sealedNote" style="display:none;">Still sealed</div>
         </div>
 
+        <div class="inline actions" id="decryptRow" style="display:none;">
+          <input id="passphraseInput" type="password" placeholder="Enter the passphrase to reveal" autocomplete="off" />
+          <button class="quiet" id="revealBtn" style="flex:0;">Reveal</button>
+        </div>
+
         <div class="actions">
           <button class="seal-btn" id="claimBtn" disabled>Break the seal &amp; claim</button>
         </div>
@@ -340,7 +351,7 @@
 
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
-  let ownerDeadline = null, claimDeadline = null, claimTargetOwner = null;
+  let ownerDeadline = null, claimDeadline = null, claimTargetOwner = null, claimCiphertext = null;
 
   // ---------- wax seal SVG ----------
   function sealSVG(cracked, size = 84) {
@@ -386,6 +397,55 @@
     return (d > 0 ? d + 'd ' : '') + `${h}:${m}:${sec}`;
   }
   function note(el, text, cls) { el.textContent = text; el.className = 'msg-line' + (cls ? ' ' + cls : ''); }
+
+  // ---------- letter encryption (AES-GCM + PBKDF2) ----------
+  const ENC_PREFIX = 'enc:v1:';
+  const PBKDF2_ITERATIONS = 200000;
+
+  function toB64(bytes) {
+    let bin = '';
+    bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin);
+  }
+  function fromB64(str) {
+    const bin = atob(str);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  async function deriveKey(passphrase, salt) {
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+  async function encryptMessage(plaintext, passphrase) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(passphrase, salt);
+    const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext)));
+    const payload = new Uint8Array(salt.length + iv.length + ciphertext.length);
+    payload.set(salt, 0);
+    payload.set(iv, salt.length);
+    payload.set(ciphertext, salt.length + iv.length);
+    return ENC_PREFIX + toB64(payload);
+  }
+  async function decryptMessage(stored, passphrase) {
+    const raw = fromB64(stored.slice(ENC_PREFIX.length));
+    const salt = raw.slice(0, 16);
+    const iv = raw.slice(16, 28);
+    const ciphertext = raw.slice(28);
+    const key = await deriveKey(passphrase, salt);
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    return new TextDecoder().decode(plaintext);
+  }
+  function isEncrypted(message) { return typeof message === 'string' && message.startsWith(ENC_PREFIX); }
 
   // ---------- wallet ----------
   async function ensureNetwork() {
@@ -458,15 +518,19 @@
     const num = parseInt($('intervalNum').value, 10);
     const unit = parseInt($('intervalUnit').value, 10);
     const msg = $('msgInput').value.trim();
+    const pass = $('passInput').value;
     if (!ethers.isAddress(ben)) { note($('createMsg'), 'Enter a valid beneficiary address.', 'err'); return; }
     if (!amt || Number(amt) <= 0) { note($('createMsg'), 'Enter an amount of BOT to lock.', 'err'); return; }
     if (!num || num <= 0) { note($('createMsg'), 'Enter a valid silence interval.', 'err'); return; }
     if (!msg) { note($('createMsg'), 'Write the letter — it is the point.', 'err'); return; }
+    if (!pass) { note($('createMsg'), 'Set a seal passphrase to encrypt the letter.', 'err'); return; }
     const interval = BigInt(num) * BigInt(unit);
     $('createBtn').disabled = true;
-    note($('createMsg'), 'Confirm in your wallet…');
+    note($('createMsg'), 'Encrypting the letter…');
     try {
-      const tx = await contract.createVault(ben, interval, msg, { value: ethers.parseEther(amt) });
+      const encrypted = await encryptMessage(msg, pass);
+      note($('createMsg'), 'Confirm in your wallet…');
+      const tx = await contract.createVault(ben, interval, encrypted, { value: ethers.parseEther(amt) });
       note($('createMsg'), 'Sealing on-chain…');
       await tx.wait();
       note($('createMsg'), 'Vault sealed. Keep checking in.', 'ok');
@@ -552,6 +616,7 @@
     try {
       const v = await getReadContract().getVault(owner);
       claimTargetOwner = owner;
+      claimCiphertext = null;
       claimDeadline = Number(v.lastCheckIn) + Number(v.checkInInterval);
       $('claimView').style.display = 'block';
       $('cBalance').textContent = fmtBOT(v.balance);
@@ -559,13 +624,23 @@
       $('cLastCheckIn').textContent = fmtDate(v.lastCheckIn);
       $('claimSeal').innerHTML = sealSVG(v.claimable);
       const letter = $('claimLetter');
-      letter.textContent = v.message;
+      const encrypted = isEncrypted(v.message);
+      $('passphraseInput').value = '';
+      $('decryptRow').style.display = 'none';
       if (v.claimable) {
         letter.classList.remove('sealed');
         $('sealedNote').style.display = 'none';
+        if (encrypted) {
+          claimCiphertext = v.message;
+          letter.textContent = 'Encrypted — enter the passphrase below to reveal.';
+          $('decryptRow').style.display = 'flex';
+        } else {
+          letter.textContent = v.message;
+        }
         $('claimBtn').disabled = !(myAddress && myAddress.toLowerCase() === v.beneficiary.toLowerCase() && v.balance > 0n);
         note($('claimMsg'), Number(v.balance) === 0 ? 'This vault has already been claimed.' : 'The silence has passed. The seal may be broken.', '');
       } else {
+        letter.textContent = v.message;
         letter.classList.add('sealed');
         $('sealedNote').style.display = 'flex';
         $('claimBtn').disabled = true;
@@ -575,6 +650,21 @@
       $('claimView').style.display = 'none';
       note($('claimMsg'), 'No vault found at that address.', 'err');
     }
+  }
+
+  async function revealLetter() {
+    if (!claimCiphertext) return;
+    const pass = $('passphraseInput').value;
+    if (!pass) { note($('claimMsg'), 'Enter the passphrase.', 'err'); return; }
+    $('revealBtn').disabled = true;
+    try {
+      const plaintext = await decryptMessage(claimCiphertext, pass);
+      $('claimLetter').textContent = plaintext;
+      $('decryptRow').style.display = 'none';
+      note($('claimMsg'), 'Letter revealed.', 'ok');
+    } catch (err) {
+      note($('claimMsg'), 'Wrong passphrase — the letter could not be revealed.', 'err');
+    } finally { $('revealBtn').disabled = false; }
   }
 
   async function doClaim() {
@@ -638,6 +728,7 @@
     loadClaimVault(a);
   });
   $('claimBtn').addEventListener('click', doClaim);
+  $('revealBtn').addEventListener('click', revealLetter);
 
   // initial seals
   $('ownerSeal').innerHTML = sealSVG(false);
