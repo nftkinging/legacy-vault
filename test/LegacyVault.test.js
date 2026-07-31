@@ -17,7 +17,7 @@ describe("LegacyVault", function () {
   }
 
   async function seal(vault, signer, beneficiary, interval = MIN_INTERVAL, value = MIN_DEPOSIT, message = "hello") {
-    return vault.connect(signer).createVault(beneficiary, interval, message, { value });
+    return vault.connect(signer).createVault(beneficiary, interval, ethers.toUtf8Bytes(message), { value });
   }
 
   // ---------- createVault ----------
@@ -69,7 +69,7 @@ describe("LegacyVault", function () {
       const v = await vault.getVault(owner.address);
       expect(v.beneficiary).to.equal(beneficiary.address);
       expect(v.balance).to.equal(MIN_DEPOSIT);
-      expect(v.message).to.equal("letter");
+      expect(ethers.toUtf8String(v.message)).to.equal("letter");
       expect(v.claimable).to.equal(false);
       expect(await vault.vaultsLeftFor(beneficiary.address)).to.deep.equal([owner.address]);
     });
@@ -116,15 +116,17 @@ describe("LegacyVault", function () {
     it("reverts over the length cap", async function () {
       const { vault, owner, beneficiary } = await loadFixture(deployFixture);
       await seal(vault, owner, beneficiary);
-      await expect(vault.connect(owner).updateMessage("a".repeat(MAX_MESSAGE_LENGTH + 1))).to.be.revertedWith("Message too long");
+      await expect(
+        vault.connect(owner).updateMessage(ethers.toUtf8Bytes("a".repeat(MAX_MESSAGE_LENGTH + 1)))
+      ).to.be.revertedWith("Message too long");
     });
 
     it("updates the message and counts as a check-in", async function () {
       const { vault, owner, beneficiary } = await loadFixture(deployFixture);
       await seal(vault, owner, beneficiary);
-      await expect(vault.connect(owner).updateMessage("revised")).to.emit(vault, "MessageUpdated");
+      await expect(vault.connect(owner).updateMessage(ethers.toUtf8Bytes("revised"))).to.emit(vault, "MessageUpdated");
       const v = await vault.getVault(owner.address);
-      expect(v.message).to.equal("revised");
+      expect(ethers.toUtf8String(v.message)).to.equal("revised");
     });
   });
 
@@ -298,7 +300,7 @@ describe("LegacyVault", function () {
         const { vault, beneficiary } = await loadFixture(deployFixture);
         const malicious = await deployMalicious(vault);
         const deposit = MIN_DEPOSIT + ethers.parseEther("0.05");
-        await malicious.createVault(beneficiary.address, MIN_INTERVAL, "letter", { value: deposit });
+        await malicious.createVault(beneficiary.address, MIN_INTERVAL, ethers.toUtf8Bytes("letter"), { value: deposit });
 
         await expect(malicious.attackWithdraw(ethers.parseEther("0.05"))).to.be.revertedWith("Transfer failed");
         // state must be untouched: the reentrant call's revert must roll back the whole tx
@@ -386,7 +388,7 @@ describe("LegacyVault", function () {
       await vault.connect(beneficiary).claim(a.address); // unlink a
       expect(new Set(await vault.vaultsLeftFor(beneficiary.address))).to.deep.equal(new Set([d.address]));
 
-      await vault.connect(b).createVault(beneficiary.address, MIN_INTERVAL, "back again", { value: MIN_DEPOSIT }); // re-link b
+      await vault.connect(b).createVault(beneficiary.address, MIN_INTERVAL, ethers.toUtf8Bytes("back again"), { value: MIN_DEPOSIT }); // re-link b
       expect(new Set(await vault.vaultsLeftFor(beneficiary.address))).to.deep.equal(new Set([d.address, b.address]));
     });
   });

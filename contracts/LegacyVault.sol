@@ -26,11 +26,10 @@ contract LegacyVault {
 
     /// @dev Bounds `getVault` payload size and, more importantly, gas cost:
     ///      storage-write cost scales ~linearly with message bytes (~711
-    ///      gas/byte measured), so the original 8192-byte cap made
-    ///      createVault cost over 6M gas at the limit. 4096 (the security
-    ///      review's original figure, already chosen with ~33% ciphertext
-    ///      overhead in mind) keeps worst-case creation cost reasonable
-    ///      while still leaving room for a short version prefix.
+    ///      gas/byte measured). `message` stores raw ciphertext bytes
+    ///      directly (no base64 — the contract never interprets the
+    ///      contents, so the 33% base64 inflation was pure waste). This cap
+    ///      is now a byte cap on that raw ciphertext.
     uint256 public constant MAX_MESSAGE_LENGTH = 4096;
 
     struct Vault {
@@ -38,7 +37,7 @@ contract LegacyVault {
         uint256 balance;        // BOT locked in the vault (wei)
         uint256 checkInInterval;// seconds of silence before claim unlocks
         uint256 lastCheckIn;    // timestamp of the owner's last proof of life
-        string message;         // the letter left behind (may be enc:v1: ciphertext)
+        bytes message;          // the letter left behind: raw ciphertext (may be enc:v1: format)
         bool exists;
     }
 
@@ -102,14 +101,15 @@ contract LegacyVault {
     ///      requires no consent from them (hybrid model — see contract docs).
     /// @param _beneficiary Who may claim if you go silent.
     /// @param _checkInInterval Seconds of silence before the claim unlocks.
-    /// @param _message The letter revealed to your beneficiary.
-    function createVault(address _beneficiary, uint256 _checkInInterval, string calldata _message) external payable {
+    /// @param _message The letter revealed to your beneficiary, as raw
+    ///        ciphertext bytes (not base64 — encode/decode that client-side).
+    function createVault(address _beneficiary, uint256 _checkInInterval, bytes calldata _message) external payable {
         require(!vaults[msg.sender].exists, "Vault already exists");
         require(_beneficiary != address(0), "Beneficiary required");
         require(_beneficiary != msg.sender, "Beneficiary must be someone else");
         require(_checkInInterval >= MIN_INTERVAL && _checkInInterval <= MAX_INTERVAL, "Interval out of range");
         require(msg.value >= MIN_DEPOSIT, "Deposit below minimum");
-        require(bytes(_message).length <= MAX_MESSAGE_LENGTH, "Message too long");
+        require(_message.length <= MAX_MESSAGE_LENGTH, "Message too long");
 
         vaults[msg.sender] = Vault({
             beneficiary: _beneficiary,
@@ -140,8 +140,8 @@ contract LegacyVault {
     }
 
     /// @notice Rewrite the letter. Also counts as a check-in.
-    function updateMessage(string calldata _message) external onlyVaultOwner {
-        require(bytes(_message).length <= MAX_MESSAGE_LENGTH, "Message too long");
+    function updateMessage(bytes calldata _message) external onlyVaultOwner {
+        require(_message.length <= MAX_MESSAGE_LENGTH, "Message too long");
         Vault storage v = vaults[msg.sender];
         v.message = _message;
         v.lastCheckIn = block.timestamp;
@@ -247,7 +247,7 @@ contract LegacyVault {
         uint256 balance,
         uint256 checkInInterval,
         uint256 lastCheckIn,
-        string memory message,
+        bytes memory message,
         bool claimable
     ) {
         Vault storage v = vaults[_owner];

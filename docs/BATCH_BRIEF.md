@@ -149,6 +149,14 @@ cannot solve on its own:
    collapsing of low-value vaults and a client-side way to hide senders.
 4. **Disclose the metadata leak.** Beneficiary relationships and balances are public on-chain
    even when letters are encrypted. Say so plainly in the UI.
+5. **Compress the plaintext before encrypting it — never the reverse.** (Batch 2.5.) Ciphertext
+   is high-entropy and does not compress; compressing first and encrypting second gets a real
+   size reduction, compressing after encrypting gets nothing. Since `message` now stores raw
+   ciphertext bytes directly (no base64 — see Batch 2.5), the pipeline is: compress plaintext
+   -> encrypt the compressed bytes -> write ciphertext bytes to `message`. Decryption on the
+   claim side reverses it: decrypt -> decompress -> plaintext. Get the order right; this is a
+   real functional bug (an undecryptable or garbled letter) if it's flipped, not just wasted
+   effort.
 
 ---
 

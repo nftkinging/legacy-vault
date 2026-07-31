@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 /// @dev Test-only. Attempts to re-enter LegacyVault.withdraw()/claim() from
 ///      its receive() hook, to prove checks-effects-interactions holds.
 interface ILegacyVault {
-    function createVault(address _beneficiary, uint256 _checkInInterval, string calldata _message) external payable;
+    function createVault(address _beneficiary, uint256 _checkInInterval, bytes calldata _message) external payable;
     function withdraw(uint256 _amount) external;
     function claim(address _owner) external;
 }
@@ -21,7 +21,7 @@ contract MaliciousReceiver {
         target = ILegacyVault(_target);
     }
 
-    function createVault(address _beneficiary, uint256 _interval, string calldata _message) external payable {
+    function createVault(address _beneficiary, uint256 _interval, bytes calldata _message) external payable {
         target.createVault{value: msg.value}(_beneficiary, _interval, _message);
     }
 

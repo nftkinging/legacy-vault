@@ -278,6 +278,25 @@ overhead, add an explicit cap:
 require(bytes(_message).length <= 4096, "Message too long");
 ```
 
+**Update (Batch 2.5):** `message` was changed from `string` to `bytes`, and the frontend now
+stores raw ciphertext instead of base64 text — the contract never interpreted the encoding,
+so the 33% base64 inflation was pure waste with no offsetting benefit. `MAX_MESSAGE_LENGTH`
+(still 4096) is now a byte cap on raw ciphertext rather than on base64 text, which is a ~33%
+increase in actual encrypted-letter capacity for the same on-chain byte budget (equivalently,
+~25% less gas for the same real letter length — see gas profiling notes for before/after
+numbers).
+
+**Considered and declined: SSTORE2 for the letter.** Storing `message` via an SSTORE2-style
+deployed-bytecode blob (~3x cheaper per byte than `SSTORE`) was costed out and rejected.
+Reasoning: the blob would be immutable once deployed — `updateMessage` and key-rotation
+re-encryption (Finding 4) both depend on being able to overwrite the letter in place, and an
+old SSTORE2 blob would persist on-chain forever with no way to delete it even after
+`closeVault`/`claim` settle the vault, which cuts against the "settle vaults cleanly" fix in
+Finding 5. It would also add a second storage-and-retrieval code path to audit for a ~3x gas
+saving on one field, which isn't a good trade for a contract already within reasonable gas
+bounds after the MAX_MESSAGE_LENGTH fix. Recorded here so auditors see this was a deliberate
+decision, not an oversight.
+
 ---
 
 ## 8. Owner can always front-run a legitimate claim — **Informational**

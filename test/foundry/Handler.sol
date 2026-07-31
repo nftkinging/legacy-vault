@@ -26,7 +26,7 @@ contract Handler is Test {
     }
 
     function _hasVault(address a) internal view returns (bool) {
-        try vault.getVault(a) returns (address, uint256, uint256, uint256, string memory, bool) {
+        try vault.getVault(a) returns (address, uint256, uint256, uint256, bytes memory, bool) {
             return true;
         } catch {
             return false;

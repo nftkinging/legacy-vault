@@ -28,7 +28,7 @@ contract LegacyVaultInvariantTest is Test {
         uint256 n = handler.actorsCount();
         for (uint256 i = 0; i < n; i++) {
             address a = handler.actorAt(i);
-            try vaultContract.getVault(a) returns (address, uint256 balance, uint256, uint256, string memory, bool) {
+            try vaultContract.getVault(a) returns (address, uint256 balance, uint256, uint256, bytes memory, bool) {
                 sum += balance;
             } catch {}
         }
