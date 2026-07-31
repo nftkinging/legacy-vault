@@ -157,6 +157,18 @@ accepted in writing with a rationale.
    and confirm it now fails.
 5. Recruit 5–10 outside testers, ideally including a non-technical one who plays the
    beneficiary. That persona is the real usability test for this product.
+6. **WalletConnect custom-chain test (untested, flagged from Batch 4):** connect via
+   WalletConnect from 2-3 real mobile wallet apps (at minimum MetaMask mobile and one
+   other, e.g. Trust Wallet or Rainbow) and confirm each can actually add/switch to BOT
+   Chain. Custom EVM chains aren't guaranteed to be accepted in a WalletConnect session
+   proposal — unlike `wallet_addEthereumChain` in a browser extension, there's no
+   standard fallback if the wallet doesn't already support the chain, so this needs
+   verification with real wallet apps, not just the desktop QR path (which was verified
+   in Batch 4 — see `app.html`'s `ensureNetworkViaAppKit()`). If a wallet can't add the
+   chain, the app surfaces a friendly error rather than silently connecting to the wrong
+   network, but the beneficiary persona should not be expected to hit that error at all —
+   if a target wallet fails here, either drop it from recommended wallets or find a
+   workaround before mainnet.
 
 **Exit criterion:** clean end-to-end runs, no critical feedback outstanding.
 

@@ -197,7 +197,6 @@
       <span class="addr" id="walletAddr"></span>
       <div class="wallet-connect-wrap">
         <button id="connectBtn" class="btn-quiet">Connect wallet</button>
-        <a id="mobileWalletLink" class="btn-quiet" href="#" target="_blank" rel="noopener" style="display:none;">Open in MetaMask</a>
         <ul class="field-select-list" id="walletPickerList" role="listbox" hidden aria-label="Choose a wallet"></ul>
       </div>
     </div>
@@ -389,6 +388,62 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
+<script type="module">
+  // WalletConnect via Reown AppKit. Loaded straight off esm.sh (no bundler —
+  // the official examples all assume Vite, which this project doesn't use;
+  // esm.sh resolves AppKit's dependency graph the same way a bundler would,
+  // confirmed by loading it standalone before wiring it in here).
+  //
+  // Both BOT chains are always registered with AppKit, not just the active
+  // one, so `switchNetwork` and the picker both work regardless of which
+  // chain config.js currently points at.
+  import { createAppKit } from 'https://esm.sh/@reown/appkit@1.8.23';
+  import { defineChain } from 'https://esm.sh/@reown/appkit@1.8.23/networks';
+  import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers@1.8.23';
+
+  const cfg = window.LEGACY_VAULT_CONFIG;
+  const toNetwork = n => defineChain({
+    id: n.id,
+    caipNetworkId: n.caipNetworkId,
+    chainNamespace: 'eip155',
+    name: n.name,
+    nativeCurrency: n.nativeCurrency,
+    rpcUrls: { default: { http: n.rpcUrls } },
+    blockExplorers: { default: { name: 'Explorer', url: n.explorerUrl } }
+  });
+
+  const testnetNetwork = toNetwork(cfg.NETWORKS.testnet);
+  const mainnetNetwork = toNetwork(cfg.NETWORKS.mainnet);
+  const isMainnetActive = cfg.CHAIN_ID_HEX === cfg.NETWORKS.mainnet.chainIdHex;
+  const activeNetwork = isMainnetActive ? mainnetNetwork : testnetNetwork;
+
+  window.__legacyVaultAppKitNetworks = { testnet: testnetNetwork, mainnet: mainnetNetwork, active: activeNetwork };
+
+  try {
+    const appKit = createAppKit({
+      adapters: [new EthersAdapter()],
+      networks: [activeNetwork, isMainnetActive ? testnetNetwork : mainnetNetwork],
+      defaultNetwork: activeNetwork,
+      projectId: cfg.WALLETCONNECT_PROJECT_ID,
+      metadata: { ...cfg.APPKIT_METADATA, url: window.location.origin },
+      features: { analytics: false, email: false, socials: false, onramp: false, swaps: false }
+    });
+
+    appKit.subscribeProviders(state => {
+      const eip155Provider = state && state['eip155'];
+      if (eip155Provider && typeof window.__onWalletConnectProvider === 'function') {
+        window.__onWalletConnectProvider(eip155Provider);
+      }
+    });
+
+    window.__legacyVaultAppKit = appKit;
+    window.dispatchEvent(new Event('legacyvault:appkit-ready'));
+  } catch (err) {
+    console.error('WalletConnect (Reown AppKit) failed to initialize:', err);
+    window.__legacyVaultAppKitError = err;
+    window.dispatchEvent(new Event('legacyvault:appkit-error'));
+  }
+</script>
 <script>
   // ---- CONFIG: shared with index.html via config.js ----
   const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
@@ -596,6 +651,9 @@
       [/user rejected|ACTION_REJECTED/i, () => `Cancelled — nothing was sent.`],
       [/insufficient funds/i, () => `Not enough BOT in your wallet to cover this, including gas.`],
     ];
+    if (err && err.walletConnectChainUnsupported) {
+      return `This wallet couldn't add ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} over WalletConnect — some mobile wallets only support a fixed chain list. Try a browser wallet extension instead, or check that your wallet app supports adding custom networks.`;
+    }
     for (const [re, msg] of rules) if (re.test(raw)) return msg();
     return raw || 'Something went wrong. Please try again.';
   }
@@ -714,21 +772,11 @@
     return `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
   }
 
-  // Mobile browsers have no injected provider at all — the beneficiary
-  // persona is exactly the person most likely to hit this. Detect it
-  // proactively (not just after a failed connect attempt) and swap the
-  // connect button for a deep link that reopens this page inside
-  // MetaMask's in-app browser, where the provider *is* injected. EIP-6963
-  // announcements are dispatched synchronously in response to the request
-  // event above, so a short grace period is enough to know none arrived.
-  setTimeout(() => {
-    if (discoveredProviders.size === 0 && !window.ethereum && isMobileUA()) {
-      $('connectBtn').style.display = 'none';
-      const link = $('mobileWalletLink');
-      link.href = metamaskDeepLink();
-      link.style.display = 'inline-block';
-    }
-  }, 150);
+  // Mobile browsers with no injected provider at all still get a connect
+  // button — clicking it opens the picker, which offers a direct MetaMask
+  // deep link alongside WalletConnect (see showWalletPicker below) rather
+  // than committing the whole button to one wallet before the user has
+  // chosen anything.
 
   async function ensureNetwork(eth) {
     try {
@@ -740,11 +788,34 @@
     }
   }
 
+  // WalletConnect sessions don't support wallet_addEthereumChain — the chain
+  // has to be part of the session proposal the wallet already approved (it's
+  // in AppKit's `networks` list from the moment createAppKit() ran). If the
+  // connected wallet's session doesn't include our chain at all, switching
+  // throws; we surface that clearly rather than silently continuing on the
+  // wrong network. Many mobile wallets only support a fixed chain allowlist,
+  // so this is a real, expected failure mode — see friendlyError() and
+  // docs/DESIGN_DEBT.md-adjacent Batch 5 note below.
+  async function ensureNetworkViaAppKit() {
+    const appKit = window.__legacyVaultAppKit;
+    const target = window.__legacyVaultAppKitNetworks.active;
+    const current = appKit.getCaipNetwork && appKit.getCaipNetwork();
+    if (current && Number(current.id) === target.id) return;
+    try {
+      await appKit.switchNetwork(target);
+    } catch (e) {
+      const err = new Error(e && e.message || 'WalletConnect could not switch network');
+      err.walletConnectChainUnsupported = true;
+      throw err;
+    }
+  }
+
   function closeWalletPicker() { $('walletPickerList').hidden = true; }
 
   function showWalletPicker(providers) {
     const list = $('walletPickerList');
     list.innerHTML = '';
+
     providers.forEach(({ info, provider }) => {
       const li = document.createElement('li');
       li.setAttribute('role', 'option');
@@ -762,6 +833,40 @@
       });
       list.appendChild(li);
     });
+
+    // Mobile with no injected provider at all: offer the direct MetaMask
+    // deep link alongside WalletConnect, since WalletConnect covers many
+    // wallets but a user already looking for MetaMask specifically shouldn't
+    // have to go through a QR/relay round trip for it.
+    if (providers.length === 0 && !window.ethereum && isMobileUA()) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.tabIndex = -1;
+      li.textContent = 'Open in MetaMask';
+      const go = () => { closeWalletPicker(); window.location.href = metamaskDeepLink(); };
+      li.addEventListener('click', go);
+      li.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+        else if (e.key === 'Escape') closeWalletPicker();
+      });
+      list.appendChild(li);
+    }
+
+    // WalletConnect always appears, listed after any detected browser
+    // wallets — it's the only path for anyone without a browser extension
+    // (desktop) or without the specific wallet app already installed (mobile).
+    const wcLi = document.createElement('li');
+    wcLi.setAttribute('role', 'option');
+    wcLi.tabIndex = -1;
+    wcLi.textContent = 'WalletConnect';
+    const pickWC = () => { closeWalletPicker(); openWalletConnect(); };
+    wcLi.addEventListener('click', pickWC);
+    wcLi.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickWC(); }
+      else if (e.key === 'Escape') closeWalletPicker();
+    });
+    list.appendChild(wcLi);
+
     list.hidden = false;
     list.querySelector('li')?.focus();
   }
@@ -770,33 +875,45 @@
     if (wrap && !wrap.contains(e.target)) closeWalletPicker();
   });
 
+  // Always show the picker rather than auto-connecting a lone detected
+  // wallet — that's the only way WalletConnect stays reachable when exactly
+  // one browser wallet is present too (picker lists browser wallets first,
+  // WalletConnect always last).
   async function connect() {
     const providers = Array.from(discoveredProviders.values());
-
-    if (providers.length > 1) { showWalletPicker(providers); return; }
-
-    let eth;
-    if (providers.length === 1) eth = providers[0].provider;
-    else if (window.ethereum) eth = window.ethereum; // legacy, no EIP-6963 support
-    else {
-      if (isMobileUA()) {
-        $('connectBtn').style.display = 'none';
-        const link = $('mobileWalletLink');
-        link.href = metamaskDeepLink();
-        link.style.display = 'inline-block';
-      } else {
-        note($('createMsg'), 'No wallet found — install MetaMask to continue.', 'err');
-      }
-      return;
-    }
-    await connectWithProvider(eth);
+    showWalletPicker(providers);
   }
 
-  async function connectWithProvider(eth) {
+  let walletConnectPending = false;
+
+  function openWalletConnect() {
+    if (window.__legacyVaultAppKitError || !window.__legacyVaultAppKit) {
+      note($('createMsg'), 'WalletConnect failed to load — check your connection and try again.', 'err');
+      return;
+    }
+    setBusy($('connectBtn'), true, 'Connecting…');
+    walletConnectPending = true;
+    window.__legacyVaultAppKit.open();
+  }
+
+  // AppKit's subscribeProviders fires whenever its internal provider state
+  // changes; `walletConnectPending` keeps this from re-running the connect
+  // flow on unrelated state changes (e.g. after the user later disconnects).
+  window.__onWalletConnectProvider = async (eip155Provider) => {
+    if (!walletConnectPending || !eip155Provider) return;
+    walletConnectPending = false;
+    await connectWithProvider(eip155Provider, { viaWalletConnect: true });
+  };
+
+  async function connectWithProvider(eth, opts = {}) {
     setBusy($('connectBtn'), true, 'Connecting…');
     try {
-      await eth.request({ method: 'eth_requestAccounts' });
-      await ensureNetwork(eth);
+      if (opts.viaWalletConnect) {
+        await ensureNetworkViaAppKit();
+      } else {
+        await eth.request({ method: 'eth_requestAccounts' });
+        await ensureNetwork(eth);
+      }
       provider = new ethers.BrowserProvider(eth);
       signer = await provider.getSigner();
       myAddress = await signer.getAddress();
