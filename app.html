@@ -29,11 +29,24 @@
     display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
     font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted);
   }
-  .wallet-compact .addr { letter-spacing: 0.02em; }
-  .wallet-connect-wrap { position: relative; }
-  #walletPickerList { min-width: 220px; }
-  #walletPickerList li { display: flex; align-items: center; gap: var(--space-2); }
-  #walletPickerList img { border-radius: 3px; flex-shrink: 0; }
+
+  .wrong-network-banner[hidden] { display: none; }
+  .wrong-network-banner {
+    display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+    gap: var(--space-3);
+    background: var(--wax-deep); color: var(--parchment-2);
+    font-family: var(--font-data); font-size: var(--text-xs);
+    padding: var(--space-3) var(--space-4);
+    margin: 0 0 var(--space-6);
+    border-radius: 2px;
+  }
+  .wrong-network-switch {
+    background: none; border: none; padding: 0; cursor: pointer;
+    color: inherit; font: inherit; text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .wrong-network-switch:hover { color: var(--gilt-hover); }
+  .wrong-network-switch:focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
 
   /* ---------- tabs ---------- */
   .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: var(--space-6); }
@@ -193,14 +206,14 @@
       <span class="word">Legacy Vault</span>
     </a>
     <div class="wallet-compact">
-      <span id="walletStatus">Wallet not connected</span>
-      <span class="addr" id="walletAddr"></span>
-      <div class="wallet-connect-wrap">
-        <button id="connectBtn" class="btn-quiet">Connect wallet</button>
-        <ul class="field-select-list" id="walletPickerList" role="listbox" hidden aria-label="Choose a wallet"></ul>
-      </div>
+      <appkit-button balance="show"></appkit-button>
     </div>
   </header>
+
+  <div id="wrongNetworkBanner" class="wrong-network-banner" hidden role="alert">
+    <span>Wrong network — this wallet isn't connected to <strong id="wrongNetworkTarget"></strong>.</span>
+    <button id="switchNetworkBtn" type="button" class="wrong-network-switch">Switch network</button>
+  </div>
 
   <div class="tabs">
     <button class="tab active" id="tabLeave">Leave a legacy</button>
@@ -389,14 +402,16 @@
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
 <script type="module">
-  // WalletConnect via Reown AppKit. Loaded straight off esm.sh (no bundler —
-  // the official examples all assume Vite, which this project doesn't use;
-  // esm.sh resolves AppKit's dependency graph the same way a bundler would,
+  // Wallet connection via Reown AppKit — <appkit-button> in the header IS
+  // the connect/account/disconnect/network-switch UI; there is no custom
+  // picker anymore. Loaded straight off esm.sh (no bundler — the official
+  // examples all assume Vite, which this project doesn't use; esm.sh
+  // resolves AppKit's dependency graph the same way a bundler would,
   // confirmed by loading it standalone before wiring it in here).
   //
   // Both BOT chains are always registered with AppKit, not just the active
-  // one, so `switchNetwork` and the picker both work regardless of which
-  // chain config.js currently points at.
+  // one, so the modal's network switcher works regardless of which chain
+  // config.js currently points at.
   import { createAppKit } from 'https://esm.sh/@reown/appkit@1.8.23';
   import { defineChain } from 'https://esm.sh/@reown/appkit@1.8.23/networks';
   import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers@1.8.23';
@@ -426,33 +441,67 @@
       defaultNetwork: activeNetwork,
       projectId: cfg.WALLETCONNECT_PROJECT_ID,
       metadata: { ...cfg.APPKIT_METADATA, url: window.location.origin },
-      features: { analytics: false, email: false, socials: false, onramp: false, swaps: false }
-    });
-
-    appKit.subscribeProviders(state => {
-      const eip155Provider = state && state['eip155'];
-      if (eip155Provider && typeof window.__onWalletConnectProvider === 'function') {
-        window.__onWalletConnectProvider(eip155Provider);
-      }
-    });
-
-    // Without this, backing out of the modal (or a deep link that silently
-    // never opens a wallet — a real, currently-unresolved gap in mobile
-    // WalletConnect flows generally, not something this app's code can fix)
-    // leaves the connect button stuck on "Connecting…" forever, since only
-    // a *successful* connection ever cleared that state. `open` flips false
-    // both on a normal close and after connecting, so this only needs to
-    // act while a connection attempt is still pending.
-    appKit.subscribeState(state => {
-      if (!state.open && typeof window.__onWalletConnectModalClosed === 'function') {
-        window.__onWalletConnectModalClosed();
+      features: { analytics: false, email: false, socials: false, onramp: false, swaps: false },
+      // Brand colors, not AppKit's default purple/blue. `--w3m-*` is the
+      // supported input key for this AppKit version (1.8.23) — confirmed by
+      // testing docs.reown.com's newer `--apkt-*` names against this exact
+      // version and finding they're silently ignored here; `--w3m-*` is
+      // read as a fallback internally and does work. color-mix-strength
+      // blends every derived surface toward parchment instead of white.
+      themeMode: 'light',
+      themeVariables: {
+        '--w3m-accent': '#9E2B25',       // wax (oxblood)
+        '--w3m-color-mix': '#F0E7D6',    // parchment
+        '--w3m-color-mix-strength': 20,
+        '--w3m-border-radius-master': '2px'
       }
     });
 
     window.__legacyVaultAppKit = appKit;
+
+    // Two of AppKit 1.8.23's derived tokens (modal background, connect-
+    // button background) reference a "-base" variable that themeVariables
+    // never actually substitutes — confirmed by dumping the library's own
+    // generated stylesheet: every other accent-derived token correctly
+    // resolved to #9E2B25, only these two stayed hardcoded at their
+    // defaults (#FFFFFF / #0988F0). This patches just those two, plus
+    // recolors the khaki "secondary/certified" accent to gilt using the
+    // same color-mix formula the library generates for everything else.
+    // `!important` because AppKit (re)injects its own generated stylesheet
+    // after this one is added, so normal source order isn't reliable.
+    const themeFix = document.createElement('style');
+    themeFix.textContent = `:root {
+      --apkt-tokens-core-backgroundAccentPrimary-base: #9E2B25 !important;
+      --apkt-tokens-theme-backgroundPrimary-base: #FBF6EC !important;
+      --apkt-tokens-core-backgroundAccentCertified: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-textAccentCertified: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-iconAccentCertified: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-borderSecondary: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-foregroundSecondary020: color-mix(in srgb, #F0E7D6 20%, rgba(195, 155, 74, 0.2)) !important;
+      --apkt-tokens-core-foregroundSecondary040: color-mix(in srgb, #F0E7D6 20%, rgba(195, 155, 74, 0.4)) !important;
+      --apkt-tokens-core-foregroundSecondary060: color-mix(in srgb, #F0E7D6 20%, rgba(195, 155, 74, 0.6)) !important;
+    }`;
+    document.head.appendChild(themeFix);
+
+    // Single bridge from AppKit's own state to this app's ethers objects.
+    // Fires on connect, disconnect, account switch, AND chain switch (via
+    // the network subscription re-running the same handler), so there is
+    // exactly one code path that ever builds or tears down provider/signer/
+    // contract — no separate "connect flow" vs "disconnect flow" to keep in
+    // sync. Also fires immediately on page load with whatever AppKit
+    // restored from a persisted session, which is what makes reconnect-on-
+    // reload and reconnect-after-returning-from-a-mobile-wallet-app work
+    // without any extra code here.
+    appKit.subscribeAccount(account => {
+      if (typeof window.__onAppKitAccount === 'function') window.__onAppKitAccount(account);
+    });
+    appKit.subscribeCaipNetworkChange(() => {
+      if (typeof window.__onAppKitAccount === 'function') window.__onAppKitAccount(appKit.getAccount());
+    });
+
     window.dispatchEvent(new Event('legacyvault:appkit-ready'));
   } catch (err) {
-    console.error('WalletConnect (Reown AppKit) failed to initialize:', err);
+    console.error('Wallet connection (Reown AppKit) failed to initialize:', err);
     window.__legacyVaultAppKitError = err;
     window.dispatchEvent(new Event('legacyvault:appkit-error'));
   }
@@ -460,7 +509,6 @@
 <script>
   // ---- CONFIG: shared with index.html via config.js ----
   const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
-  const CHAIN_ID_HEX = window.LEGACY_VAULT_CONFIG.CHAIN_ID_HEX;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
 
   // ABI matches the hardened contract (contracts/LegacyVault.sol) — `message`
@@ -664,8 +712,8 @@
       [/user rejected|ACTION_REJECTED/i, () => `Cancelled — nothing was sent.`],
       [/insufficient funds/i, () => `Not enough BOT in your wallet to cover this, including gas.`],
     ];
-    if (err && err.walletConnectChainUnsupported) {
-      return `This wallet couldn't add ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} over WalletConnect — some mobile wallets only support a fixed chain list. Try a browser wallet extension instead, or check that your wallet app supports adding custom networks.`;
+    if (err && err.networkSwitchFailed) {
+      return `Couldn't switch to ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} — some wallets (especially over WalletConnect) only support a fixed chain list. Try a browser wallet extension instead, or add the network manually using the RPC shown in this app's footer.`;
     }
     if (err && err.wrongChainRpc) {
       return `Your wallet connected to a different network than ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} — this chain ID is shared with another, unrelated chain in some wallets' network lists. Remove and re-add ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} manually using the RPC shown in this app's footer, then reconnect.`;
@@ -770,167 +818,13 @@
     close();
   }
 
-  // ---------- wallet: EIP-6963 multi-provider discovery ----------
-  // Desktop with two or more wallet extensions installed used to just read
-  // window.ethereum directly, so whichever extension loaded last silently
-  // won. EIP-6963 has every wallet announce itself with a name/icon/uuid
-  // instead of fighting over one global; we collect them all and only ask
-  // the user to pick when there's genuinely more than one.
-  const discoveredProviders = new Map(); // uuid -> { info, provider }
-  window.addEventListener('eip6963:announceProvider', (event) => {
-    const { info, provider } = event.detail;
-    discoveredProviders.set(info.uuid, { info, provider });
-  });
-  window.dispatchEvent(new Event('eip6963:requestProvider'));
-
-  function isMobileUA() { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
-  function metamaskDeepLink() {
-    return `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
-  }
-
-  // Mobile browsers with no injected provider at all still get a connect
-  // button — clicking it opens the picker, which offers a direct MetaMask
-  // deep link alongside WalletConnect (see showWalletPicker below) rather
-  // than committing the whole button to one wallet before the user has
-  // chosen anything.
-
-  async function ensureNetwork(eth) {
-    try {
-      await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_ID_HEX }] });
-    } catch (e) {
-      if (e.code === 4902) {
-        await eth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
-      } else throw e;
-    }
-  }
-
-  // WalletConnect sessions don't support wallet_addEthereumChain — the chain
-  // has to be part of the session proposal the wallet already approved (it's
-  // in AppKit's `networks` list from the moment createAppKit() ran). If the
-  // connected wallet's session doesn't include our chain at all, switching
-  // throws; we surface that clearly rather than silently continuing on the
-  // wrong network. Many mobile wallets only support a fixed chain allowlist,
-  // so this is a real, expected failure mode — see friendlyError() and
-  // docs/DESIGN_DEBT.md-adjacent Batch 5 note below.
-  async function ensureNetworkViaAppKit() {
-    const appKit = window.__legacyVaultAppKit;
-    const target = window.__legacyVaultAppKitNetworks.active;
-    const current = appKit.getCaipNetwork && appKit.getCaipNetwork();
-    if (current && Number(current.id) === target.id) return;
-    try {
-      await appKit.switchNetwork(target);
-    } catch (e) {
-      const err = new Error(e && e.message || 'WalletConnect could not switch network');
-      err.walletConnectChainUnsupported = true;
-      throw err;
-    }
-  }
-
-  function closeWalletPicker() { $('walletPickerList').hidden = true; }
-
-  function showWalletPicker(providers) {
-    const list = $('walletPickerList');
-    list.innerHTML = '';
-
-    providers.forEach(({ info, provider }) => {
-      const li = document.createElement('li');
-      li.setAttribute('role', 'option');
-      li.tabIndex = -1;
-      const icon = document.createElement('img');
-      icon.src = info.icon; icon.alt = ''; icon.width = 18; icon.height = 18;
-      const label = document.createElement('span');
-      label.textContent = info.name;
-      li.append(icon, label);
-      const pick = () => { closeWalletPicker(); connectWithProvider(provider); };
-      li.addEventListener('click', pick);
-      li.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
-        else if (e.key === 'Escape') closeWalletPicker();
-      });
-      list.appendChild(li);
-    });
-
-    // Mobile with no injected provider at all: offer the direct MetaMask
-    // deep link alongside WalletConnect, since WalletConnect covers many
-    // wallets but a user already looking for MetaMask specifically shouldn't
-    // have to go through a QR/relay round trip for it.
-    if (providers.length === 0 && !window.ethereum && isMobileUA()) {
-      const li = document.createElement('li');
-      li.setAttribute('role', 'option');
-      li.tabIndex = -1;
-      li.textContent = 'Open in MetaMask';
-      const go = () => { closeWalletPicker(); window.location.href = metamaskDeepLink(); };
-      li.addEventListener('click', go);
-      li.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
-        else if (e.key === 'Escape') closeWalletPicker();
-      });
-      list.appendChild(li);
-    }
-
-    // WalletConnect always appears, listed after any detected browser
-    // wallets — it's the only path for anyone without a browser extension
-    // (desktop) or without the specific wallet app already installed (mobile).
-    const wcLi = document.createElement('li');
-    wcLi.setAttribute('role', 'option');
-    wcLi.tabIndex = -1;
-    wcLi.textContent = 'WalletConnect';
-    const pickWC = () => { closeWalletPicker(); openWalletConnect(); };
-    wcLi.addEventListener('click', pickWC);
-    wcLi.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickWC(); }
-      else if (e.key === 'Escape') closeWalletPicker();
-    });
-    list.appendChild(wcLi);
-
-    list.hidden = false;
-    list.querySelector('li')?.focus();
-  }
-  document.addEventListener('click', e => {
-    const wrap = document.querySelector('.wallet-connect-wrap');
-    if (wrap && !wrap.contains(e.target)) closeWalletPicker();
-  });
-
-  // Always show the picker rather than auto-connecting a lone detected
-  // wallet — that's the only way WalletConnect stays reachable when exactly
-  // one browser wallet is present too (picker lists browser wallets first,
-  // WalletConnect always last).
-  async function connect() {
-    const providers = Array.from(discoveredProviders.values());
-    showWalletPicker(providers);
-  }
-
-  let walletConnectPending = false;
-
-  function openWalletConnect() {
-    if (window.__legacyVaultAppKitError || !window.__legacyVaultAppKit) {
-      note($('createMsg'), 'WalletConnect failed to load — check your connection and try again.', 'err');
-      return;
-    }
-    setBusy($('connectBtn'), true, 'Connecting…');
-    walletConnectPending = true;
-    window.__legacyVaultAppKit.open();
-  }
-
-  // The modal closing (back button, tapping outside, or a deep link that
-  // never actually opened a wallet app) is not itself an error — just an
-  // abandoned attempt. Reset to a clean, retryable state instead of leaving
-  // "Connecting…" on screen forever.
-  window.__onWalletConnectModalClosed = () => {
-    if (!walletConnectPending) return;
-    walletConnectPending = false;
-    setBusy($('connectBtn'), false);
-    note($('createMsg'), 'WalletConnect was closed before connecting — tap Connect wallet to try again.', '');
-  };
-
-  // AppKit's subscribeProviders fires whenever its internal provider state
-  // changes; `walletConnectPending` keeps this from re-running the connect
-  // flow on unrelated state changes (e.g. after the user later disconnects).
-  window.__onWalletConnectProvider = async (eip155Provider) => {
-    if (!walletConnectPending || !eip155Provider) return;
-    walletConnectPending = false;
-    await connectWithProvider(eip155Provider, { viaWalletConnect: true });
-  };
+  // ---------- wallet: bridge AppKit's account state to ethers ----------
+  // <appkit-button> in the header owns the entire connect/disconnect/
+  // account-switch/network-switch UI now. This is the one place that ever
+  // builds or tears down provider/signer/contract — it runs for every kind
+  // of state change (connect, disconnect, switching accounts, switching
+  // chains), so there's no separate disconnect path to fall out of sync
+  // with connect, which is what left disconnect half-wired before.
 
   // Testnet chain ID 968 collides with an unrelated chain (Datagram) in the
   // public chain registry — see docs/LegacyVault_Mainnet_Plan.md Batch 5
@@ -953,26 +847,58 @@
     }
   }
 
-  async function connectWithProvider(eth, opts = {}) {
-    setBusy($('connectBtn'), true, 'Connecting…');
+  function showWrongNetworkBanner() {
+    $('wrongNetworkTarget').textContent = window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+    $('wrongNetworkBanner').hidden = false;
+  }
+  function hideWrongNetworkBanner() { $('wrongNetworkBanner').hidden = true; }
+
+  $('switchNetworkBtn').addEventListener('click', async () => {
     try {
-      if (opts.viaWalletConnect) {
-        await ensureNetworkViaAppKit();
-      } else {
-        await eth.request({ method: 'eth_requestAccounts' });
-        await ensureNetwork(eth);
-      }
-      provider = new ethers.BrowserProvider(eth);
-      await verifyGenuineBotChain(provider);
+      await window.__legacyVaultAppKit.switchNetwork(window.__legacyVaultAppKitNetworks.active);
+    } catch (err) {
+      console.error(err);
+      err.networkSwitchFailed = true;
+      note($('createMsg'), friendlyError(err), 'err');
+    }
+  });
+
+  // Fully clears connection state — used on disconnect, on a failed/wrong-
+  // network connect, and as the baseline before every reconnect attempt so
+  // stale state never lingers across an account or network switch.
+  function clearConnectionState() {
+    provider = signer = contract = myAddress = undefined;
+    $('createBtn').disabled = true;
+    $('findBtn').disabled = true;
+    $('lookupBtn').disabled = true;
+    refreshOwnerVault(); // contract is now undefined; falls back to the empty "create" view
+  }
+
+  // The single entry point AppKit calls into. `account` is AppKit's own
+  // account-state object (`{isConnected, address, ...}`); this fires on
+  // connect, disconnect, switching accounts, switching chains, and once
+  // immediately on page load with whatever session AppKit already restored
+  // — which is what makes "stay connected across reload" and "restore after
+  // returning from a mobile wallet app" work with no extra code here.
+  window.__onAppKitAccount = async (account) => {
+    hideWrongNetworkBanner();
+
+    if (!account || !account.isConnected || !account.address) {
+      clearConnectionState();
+      return;
+    }
+
+    try {
+      const eth = window.__legacyVaultAppKit.getWalletProvider();
+      if (!eth) throw new Error('Wallet provider not ready yet.');
+      const nextProvider = new ethers.BrowserProvider(eth);
+      await verifyGenuineBotChain(nextProvider);
+
+      provider = nextProvider;
       signer = await provider.getSigner();
       myAddress = await signer.getAddress();
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
 
-      $('walletStatus').textContent = `Connected · ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}`;
-      $('walletAddr').textContent = short(myAddress);
-      setBusy($('connectBtn'), false);
-      $('connectBtn').textContent = 'Connected';
-      $('connectBtn').disabled = true;
       $('createBtn').disabled = false;
       $('findBtn').disabled = false;
       $('lookupBtn').disabled = false;
@@ -980,10 +906,11 @@
       await refreshOwnerVault();
     } catch (err) {
       console.error(err);
-      setBusy($('connectBtn'), false);
-      note($('createMsg'), friendlyError(err), 'err');
+      clearConnectionState();
+      if (err.wrongChainRpc) showWrongNetworkBanner();
+      else note($('createMsg'), friendlyError(err), 'err');
     }
-  }
+  };
 
   function getReadContract() {
     if (contract) return contract;
@@ -1321,7 +1248,6 @@
     $('tabClaim').classList.add('active'); $('tabLeave').classList.remove('active');
     $('claimPane').style.display = 'block'; $('leavePane').style.display = 'none';
   });
-  $('connectBtn').addEventListener('click', connect);
   $('createBtn').addEventListener('click', createVault);
   $('checkInBtn').addEventListener('click', checkIn);
   $('depositToggleBtn').addEventListener('click', () => showOnlyInlineForm('depositForm'));
