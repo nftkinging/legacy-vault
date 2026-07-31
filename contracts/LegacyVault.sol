@@ -164,11 +164,18 @@ contract LegacyVault {
         emit BeneficiaryUpdated(msg.sender, oldBeneficiary, _newBeneficiary);
     }
 
-    /// @notice Take funds back out. It's your money — allowed any time.
+    /// @notice Take funds back out. It's your money — allowed any time, but a
+    ///         partial withdrawal cannot drop a live vault below MIN_DEPOSIT.
+    ///         That floor exists to make naming a beneficiary cost something;
+    ///         letting withdraw() empty the vault to zero while the vault
+    ///         (and its beneficiary link) stays alive would make it free.
+    ///         Use closeVault() to take everything and unlink for good.
     function withdraw(uint256 _amount) external onlyVaultOwner {
         Vault storage v = vaults[msg.sender];
         require(_amount > 0 && _amount <= v.balance, "Invalid amount");
-        v.balance -= _amount;
+        uint256 newBalance = v.balance - _amount;
+        require(newBalance >= MIN_DEPOSIT, "Would drop below minimum - use closeVault() instead");
+        v.balance = newBalance;
         v.lastCheckIn = block.timestamp;
         (bool ok, ) = msg.sender.call{value: _amount}("");
         require(ok, "Transfer failed");

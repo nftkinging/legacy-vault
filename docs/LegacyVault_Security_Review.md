@@ -181,7 +181,16 @@ above 1 wei to make spam costly.
 
 ---
 
-## 4. Letter is world-readable plaintext — **High**
+## 4. Letter is world-readable plaintext — **High** — **Partially addressed**
+
+**Status:** the passphrase-derived path (AES-GCM + PBKDF2, `enc:v1:` prefix) shipped in the
+frontend before Batch 2. The contract now supports the registered-key path too
+(`registerAsBeneficiary`, versioned so rotation doesn't brick old letters), but **no frontend
+exists yet to use it** — Batch 4 work. Until then every vault still encrypts to the passphrase
+fallback regardless of whether the beneficiary has registered, and the ciphertext format has
+no way to record which key version it targeted (needed once the registered-key path is wired
+up, so decryption can fetch the right historical key via `beneficiaryKeyAt`). Do not consider
+this finding closed until Batch 4 ships both.
 
 `getVault` returns `message` to **any caller, regardless of `claimable`**:
 
