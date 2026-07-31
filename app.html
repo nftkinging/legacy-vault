@@ -55,35 +55,7 @@
   }
   appkit-button { opacity: 0; transition: opacity var(--duration-state) var(--ease); }
   .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
-  .wallet-compact.is-ready.is-desktop appkit-button { opacity: 1; }
-
-  /* Mobile leads with a direct wallet-app deep link (a plain synchronous
-     navigation) rather than the AppKit modal, because WalletConnect's
-     pairing URI is generated asynchronously and mobile browsers only allow
-     a wallet-app deep link to fire within the click's synchronous user-
-     gesture window — confirmed against real Reown/WalletConnect issues
-     while debugging Batch 4.2. WalletConnect stays available as a fallback
-     for wallets other than MetaMask, just demoted to secondary. */
-  .wallet-mobile-actions {
-    display: none; flex-direction: column; align-items: end; gap: var(--space-2);
-    opacity: 0; transition: opacity var(--duration-state) var(--ease);
-  }
-  .wallet-compact.is-ready.is-mobile .wallet-mobile-actions { display: flex; opacity: 1; }
-  .wallet-mobile-primary {
-    background: var(--wax); color: var(--parchment-2);
-    border: none; border-radius: 2px; padding: var(--space-3) var(--space-5);
-    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
-    text-decoration: none; cursor: pointer; white-space: nowrap;
-  }
-  .wallet-mobile-primary:hover { background: var(--wax-hover); }
-  .wallet-mobile-primary:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
-  .wallet-mobile-secondary {
-    background: none; border: none; padding: 0; cursor: pointer;
-    color: var(--muted); font-family: var(--font-data); font-size: var(--text-xs);
-    text-decoration: underline; text-underline-offset: 2px; white-space: nowrap;
-  }
-  .wallet-mobile-secondary:hover { color: var(--ink); }
-  .wallet-mobile-secondary:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+  .wallet-compact.is-ready appkit-button { opacity: 1; }
 
   .wrong-network-banner[hidden] { display: none; }
   .wrong-network-banner {
@@ -263,10 +235,6 @@
     <div class="wallet-compact" id="walletCompact">
       <button type="button" class="wallet-skeleton" id="walletSkeleton" disabled aria-hidden="true">Connect Wallet</button>
       <appkit-button balance="show"></appkit-button>
-      <div class="wallet-mobile-actions" id="walletMobileActions" hidden>
-        <a id="mobileWalletDeepLink" class="wallet-mobile-primary" href="#" rel="noopener">Open in MetaMask</a>
-        <button type="button" id="mobileWalletConnectBtn" class="wallet-mobile-secondary">or connect via WalletConnect</button>
-      </div>
     </div>
   </header>
 
@@ -558,6 +526,9 @@
     appKit.subscribeCaipNetworkChange(() => {
       if (typeof window.__onAppKitAccount === 'function') window.__onAppKitAccount(appKit.getAccount());
     });
+    appKit.subscribeState(state => {
+      if (typeof window.__onAppKitModalStateChange === 'function') window.__onAppKitModalStateChange(state);
+    });
 
     window.dispatchEvent(new Event('legacyvault:appkit-ready'));
   } catch (err) {
@@ -571,20 +542,15 @@
   const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
 
-  function isMobileUA() { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
-  function metamaskDeepLink() {
-    return `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
-  }
-
   // A previous connection attempt that never finished (backed out of the
-  // wallet app, closed the tab mid-pairing) can leave a WalletConnect
-  // pairing behind that the relay still considers active — the next
-  // attempt then fails with "Connection declined. Connection can be
-  // declined if a previous request is still active", even though nothing
-  // is actually using that pairing anymore. Clearing every existing
-  // pairing before opening a fresh connection attempt is safe: an
-  // in-progress *session* (a real, connected wallet) isn't a pairing
-  // waiting to be used and isn't touched by this.
+  // wallet app, closed the modal mid-pairing, a stale pairing left over
+  // from an earlier tab/session) can leave a WalletConnect pairing behind
+  // that the relay still considers active — the next attempt then fails
+  // with "Connection declined. Connection can be declined if a previous
+  // request is still active", even though nothing is actually using that
+  // pairing anymore. Clearing every existing pairing is safe: an
+  // in-progress *session* (a real, connected wallet) lives in
+  // client.session, not client.pairing, so this never touches one.
   async function clearStaleWalletConnectPairings() {
     try {
       const appKit = window.__legacyVaultAppKit;
@@ -605,27 +571,34 @@
     }
   }
 
-  document.getElementById('mobileWalletConnectBtn').addEventListener('click', async () => {
-    await clearStaleWalletConnectPairings();
-    window.__legacyVaultAppKit.open();
-  });
+  // Timing matters here. Clearing on every modal *open* risks a race: if
+  // AppKit has already started generating a pairing for the attempt the
+  // user is opening the modal to make, clearing pairings right after could
+  // delete that brand-new one out from under it. Instead:
+  //  - once at load, before the user has done anything, so a pairing
+  //    orphaned by an earlier tab/session can never block the first
+  //    attempt of this one;
+  //  - again when the modal closes without having connected, so an
+  //    abandoned attempt (closed mid-pairing) can't block the *next* one
+  //    either. By the time `open` flips false the attempt is already over,
+  //    so there's nothing left to race with.
+  let walletConnectWasOpen = false;
+  window.__onAppKitModalStateChange = (state) => {
+    if (state.open) { walletConnectWasOpen = true; return; }
+    if (!walletConnectWasOpen) return;
+    walletConnectWasOpen = false;
+    const appKit = window.__legacyVaultAppKit;
+    if (appKit && !appKit.getIsConnectedState()) clearStaleWalletConnectPairings();
+  };
 
-  // Cross-fade the skeleton for the real connect UI once AppKit has
-  // actually loaded and initialized — not before, since <appkit-button>
-  // has no content (and no reserved size of its own) until then. Mobile
-  // browsers get a direct wallet-app deep link as the primary action
-  // instead of <appkit-button> — see the .wallet-mobile-actions CSS
-  // comment for why. Registered here, ahead of the module script's
-  // dispatch, because classic scripts run before deferred module scripts
-  // regardless of source order.
+  // Cross-fade the skeleton for the real <appkit-button> once AppKit has
+  // actually loaded and initialized — not before, since the custom element
+  // has no content (and no reserved size of its own) until then. Registered
+  // here, ahead of the module script's dispatch, because classic scripts
+  // run before deferred module scripts regardless of source order.
   window.addEventListener('legacyvault:appkit-ready', () => {
-    const compact = document.getElementById('walletCompact');
-    if (isMobileUA()) {
-      compact.classList.add('is-ready', 'is-mobile');
-      document.getElementById('mobileWalletDeepLink').href = metamaskDeepLink();
-    } else {
-      compact.classList.add('is-ready', 'is-desktop');
-    }
+    document.getElementById('walletCompact').classList.add('is-ready');
+    if (!window.__legacyVaultAppKit.getIsConnectedState()) clearStaleWalletConnectPairings();
   });
   window.addEventListener('legacyvault:appkit-error', () => {
     const skeleton = document.getElementById('walletSkeleton');
@@ -958,9 +931,14 @@
     return CHAIN_ID_HEX === NETWORKS.mainnet.chainIdHex ? NETWORKS.mainnet : NETWORKS.testnet;
   }
 
-  async function verifyGenuineBotChain(prov) {
+  // Queries the raw EIP-1193 provider directly, not through ethers —
+  // ethers.BrowserProvider caches network detection internally and a wallet
+  // that just switched chains (e.g. right after the user adds BOT Chain)
+  // is exactly the moment that cache is most likely stale. Going straight
+  // to the wallet removes that layer entirely for this specific check.
+  async function verifyGenuineBotChain(eth) {
     const expected = getActiveNetworkConfig().genesisHash;
-    const genesis = await prov.send('eth_getBlockByNumber', ['0x0', false]);
+    const genesis = await eth.request({ method: 'eth_getBlockByNumber', params: ['0x0', false] });
     if (!genesis || String(genesis.hash).toLowerCase() !== expected.toLowerCase()) {
       const err = new Error('Connected RPC does not match BOT Chain’s genesis block.');
       err.wrongChainRpc = true;
@@ -1012,10 +990,9 @@
     try {
       const eth = window.__legacyVaultAppKit.getWalletProvider();
       if (!eth) throw new Error('Wallet provider not ready yet.');
-      const nextProvider = new ethers.BrowserProvider(eth);
-      await verifyGenuineBotChain(nextProvider);
+      await verifyGenuineBotChain(eth);
 
-      provider = nextProvider;
+      provider = new ethers.BrowserProvider(eth);
       signer = await provider.getSigner();
       myAddress = await signer.getAddress();
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);

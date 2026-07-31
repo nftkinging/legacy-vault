@@ -214,6 +214,34 @@ accepted in writing with a rationale.
      navigation not subject to the async-pairing timing problem. Batch 5 mobile testing
      should treat WalletConnect-in-plain-mobile-browser as best-effort, and lean on the
      direct deep link and in-app-browser paths as the ones expected to work reliably.
+9. **Reverted the custom mobile picker entirely (2026-07-31):** the "Open in MetaMask"
+   primary / WalletConnect secondary split from item 8 was itself the wrong call — it
+   hardcoded one wallet by name and, worse, showed that custom deep-link UI even inside
+   wallet in-app browsers (Zerion's, confirmed by screenshot) where an injected provider
+   was already present and should have been used directly with no WalletConnect involved
+   at all. Reverted to a single `<appkit-button>` everywhere, desktop and mobile
+   identical — AppKit's own modal already discovers whatever wallet is injected
+   (EIP-6963, generic, no hardcoded names) and connects through it directly when
+   selected; the custom UI was overriding that instead of using it. Confirmed locally
+   across a plain desktop browser, plain mobile Safari, and simulated MetaMask/Zerion
+   in-app browsers (mocked injected providers) that the injected wallet appears in
+   AppKit's modal and connects correctly in every case.
+   - Also root-caused "Connection declined — a previous request is still active"
+     further: a real WalletConnect pairing is created as soon as the QR view opens, and
+     if the user closes the modal without completing pairing, that pairing is never
+     cleaned up on its own — confirmed by inspecting `client.pairing.getAll()` before
+     and after closing. Fixed with two cleanup points instead of one on our own
+     picker's click handler (which no longer exists): once on page load (before any
+     connection attempt, race-free), and once when the modal closes without having
+     connected (after the attempt is already over, so it can't race a fresh one).
+   - Also hardened the wrong-network check (`verifyGenuineBotChain`) to query the raw
+     EIP-1193 provider directly instead of through `ethers.BrowserProvider`, removing
+     ethers' own network-detection caching as a possible source of a false positive
+     right after a chain switch. The Datagram collision on 968 (item 7) remains the
+     most likely explanation for a wallet resolving the wrong RPC after "adding BOT
+     Chain" — this fix rules out our own check being the bug on top of that, but can't
+     rule out a wallet's own registry-based "add network" flow silently substituting
+     Datagram's RPC, which is exactly the kind of thing that check exists to catch.
 
 **Exit criterion:** clean end-to-end runs, no critical feedback outstanding.
 
