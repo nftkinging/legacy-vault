@@ -16,4 +16,7 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },
+  gasReporter: {
+    enabled: process.env.REPORT_GAS === "true",
+  },
 };

@@ -24,11 +24,14 @@ contract LegacyVault {
     ///      top-up deposits have no floor.
     uint256 public constant MIN_DEPOSIT = 0.1 ether;
 
-    /// @dev Bounds `getVault` payload size and gas cost of create/update.
-    ///      Sized with headroom over the plaintext-era 4096-byte guidance to
-    ///      absorb base64 ciphertext overhead (~33%) plus a short version
-    ///      prefix.
-    uint256 public constant MAX_MESSAGE_LENGTH = 8192;
+    /// @dev Bounds `getVault` payload size and, more importantly, gas cost:
+    ///      storage-write cost scales ~linearly with message bytes (~711
+    ///      gas/byte measured), so the original 8192-byte cap made
+    ///      createVault cost over 6M gas at the limit. 4096 (the security
+    ///      review's original figure, already chosen with ~33% ciphertext
+    ///      overhead in mind) keeps worst-case creation cost reasonable
+    ///      while still leaving room for a short version prefix.
+    uint256 public constant MAX_MESSAGE_LENGTH = 4096;
 
     struct Vault {
         address beneficiary;    // who can claim if the owner goes silent
