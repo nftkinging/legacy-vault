@@ -16,6 +16,8 @@
   --wax-hover: #AE332C;
   --wax-deep: #6E1D1A;
   --gilt: #C39B4A;
+  --gilt-hover: #D4B268;
+  --gilt-deep: #8A6B34;
   --text: #2A1E22;
   --muted: #6E5F54;
   --rule: #C9B99B;
@@ -69,7 +71,15 @@
   --shadow-raised-sm: 0 2px 0 var(--wax-deep), 0 4px 8px -2px rgba(110, 29, 26, 0.4);
   --shadow-raised-hover: 0 3px 0 var(--wax-deep), 0 6px 12px -2px rgba(110, 29, 26, 0.45);
   --shadow-raised-active: 0 1px 0 var(--wax-deep), 0 2px 4px -1px rgba(110, 29, 26, 0.35);
-  --shadow-card: 0 1px 2px rgba(36, 19, 24, 0.10), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
+  /* Foil gets its own warm-gold-tinted shadow family, not the wax one —
+     real foil pressed onto the page, not a filled div. */
+  --shadow-gilt-sm: 0 2px 0 var(--gilt-deep), 0 4px 8px -2px rgba(138, 107, 52, 0.45);
+  --shadow-gilt-hover: 0 3px 0 var(--gilt-deep), 0 6px 12px -2px rgba(138, 107, 52, 0.5);
+  --shadow-gilt-active: 0 1px 0 var(--gilt-deep), 0 2px 4px -1px rgba(138, 107, 52, 0.4);
+  /* Raised, not just outlined: a warm directional shadow (down-right, away
+     from the upper-left light) plus a faint inset rim-light on the
+     top-left edge catching that same light. */
+  --shadow-card: 0 4px 10px -3px rgba(36, 19, 24, 0.28), 0 1px 3px rgba(36, 19, 24, 0.12), inset 1px 1px 0 rgba(255, 255, 255, 0.5);
   /* Direct value, not chained through another custom property: a custom
      property that references a second custom property does not
      re-resolve per descendant in Chromium when only the inner one is
@@ -101,8 +111,14 @@ body[data-register="night"] {
   background: var(--ink);
   color: var(--text-on-ink);
 }
+/* Paper grain: one tiling texture, baked at low alpha (2-6%) into the PNG
+   itself so it can layer directly on *any* parchment surface. Mixed into
+   the `background` shorthand at each surface below (body, cards, inputs)
+   rather than as a page-level overlay — an overlay sitting behind
+   elements with their own opaque background never actually reaches them. */
 body[data-register="day"] {
-  background: var(--parchment);
+  background: var(--grain-url) repeat, var(--parchment);
+  background-size: 96px 96px;
   color: var(--text);
   position: relative;
   /* Gilt fails 3:1 non-text contrast against every parchment surface
@@ -111,23 +127,11 @@ body[data-register="day"] {
      ring instead; night keeps the token default (gilt on ink is 6.86:1). */
   --focus-color: var(--wax);
 }
-/* Paper grain: one tiling texture at low opacity, parchment surfaces only */
-body[data-register="day"]::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image: var(--grain-url);
-  background-repeat: repeat;
-  background-size: 96px 96px;
-  opacity: 0.035;
-  mix-blend-mode: multiply;
-  pointer-events: none;
-  z-index: 0;
-}
 
 /* ---------- 3. Material: laid paper (cards/panels) ---------- */
 .card-laid {
-  background: var(--parchment-2);
+  background: var(--grain-url) repeat, var(--parchment-2);
+  background-size: 96px 96px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
@@ -148,7 +152,11 @@ body[data-register="day"]::before {
 }
 
 /* ---------- 6. Buttons ---------- */
-button {
+/* Shared base applies to the class too, not just the element — a button
+   *material* used on an `<a>` (the landing CTA) still needs cursor,
+   radius, and the transition, none of which an anchor inherits from a
+   bare `button` element selector. */
+button, .btn-wax, .btn-ink, .btn-quiet, .btn-danger, .btn-gilt {
   font-family: var(--font-data);
   font-size: var(--text-xs);
   letter-spacing: 0.14em;
@@ -163,7 +171,7 @@ button {
               transform var(--duration-state) var(--ease),
               filter var(--duration-state) var(--ease);
 }
-button:focus-visible {
+button:focus-visible, .btn-wax:focus-visible, .btn-ink:focus-visible, .btn-quiet:focus-visible, .btn-danger:focus-visible, .btn-gilt:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--focus-color);
 }
@@ -235,11 +243,27 @@ body[data-register="night"] .btn-ink:hover:not(:disabled) { background: rgba(240
 .btn-gilt {
   background: var(--gilt);
   color: var(--ink-2);
-  border: 1px solid var(--gilt);
+  border: 1px solid var(--gilt-deep);
+  box-shadow: var(--shadow-gilt-sm);
+  transform: translateY(0);
 }
-.btn-gilt:hover:not(:disabled) { background: transparent; color: var(--gilt); }
-.btn-gilt:active:not(:disabled) { transform: translateY(1px); }
-.btn-gilt:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-gilt:hover:not(:disabled):not(.is-loading) {
+  background: var(--gilt-hover);
+  box-shadow: var(--shadow-gilt-hover);
+  transform: translateY(-1px);
+}
+.btn-gilt:active:not(:disabled):not(.is-loading) {
+  background: var(--gilt-deep);
+  color: var(--parchment-2);
+  box-shadow: var(--shadow-gilt-active);
+  transform: translateY(1px);
+}
+.btn-gilt:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.65) brightness(0.95);
+  box-shadow: 0 2px 0 rgba(90, 80, 78, 0.3);
+  transform: none;
+}
 
 /* Loading spinner: a small turning wax-seal arc, not a generic spinner. */
 .spinner {
@@ -256,42 +280,62 @@ body[data-register="night"] .btn-ink:hover:not(:disabled) { background: rgba(240
 @keyframes seal-spin { to { transform: rotate(360deg); } }
 
 /* ---------- 7. Inputs — letterpress material ---------- */
-/* Resting: debossed into the paper (dark inset top-left, light bottom-right).
-   Focus: gilt hairline ring + deeper inset. Error: inset shifts to wax red,
-   message sits below (never a tooltip). Filled is visually distinct from
-   placeholder via a lighter paper tone. */
+/* Resting: debossed INTO the paper — a real pressed groove, not a hairline.
+   Dark shadow (blurred, facing the upper-left light source) reads as the
+   inner wall the light can't reach; a soft light rim opposite it catches
+   what light grazes in. Focus: gilt/wax hairline ring + deeper inset.
+   Error: inset shifts to wax red, message sits below (never a tooltip).
+   Filled is a visibly lighter paper tone than resting/placeholder. */
 input, textarea, select, .field-select-trigger {
   width: 100%;
   font-family: var(--font-data);
   font-size: var(--text-sm);
   color: var(--text);
-  background: var(--parchment-3);
-  border: 1px solid transparent;
+  background: var(--grain-url) repeat, var(--parchment-3);
+  background-size: 96px 96px;
+  border: 1px solid rgba(22, 11, 14, 0.12);
   border-radius: var(--radius-sm);
   padding: var(--space-3) var(--space-3);
-  box-shadow: inset 1.5px 1.5px 0 rgba(22, 11, 14, 0.20), inset -1px -1px 0 rgba(255, 255, 255, 0.35);
-  transition: box-shadow var(--duration-state) var(--ease), background var(--duration-state) var(--ease);
+  box-shadow:
+    inset 0 3px 5px rgba(22, 11, 14, 0.30),
+    inset 2px 2px 4px rgba(22, 11, 14, 0.22),
+    inset -1px -2px 3px rgba(255, 255, 255, 0.65);
+  transition: box-shadow var(--duration-state) var(--ease), background-color var(--duration-state) var(--ease);
 }
 textarea { font-family: var(--font-display); font-size: var(--text-lg); line-height: 1.6; min-height: 110px; resize: vertical; }
 input:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus) {
-  box-shadow: inset 1.5px 1.5px 0 rgba(22, 11, 14, 0.26), inset -1px -1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 3px 6px rgba(22, 11, 14, 0.36),
+    inset 2px 2px 4px rgba(22, 11, 14, 0.26),
+    inset -1px -2px 3px rgba(255, 255, 255, 0.7);
 }
-/* filled vs. placeholder */
-input:not(:placeholder-shown), textarea:not(:placeholder-shown) { background: var(--parchment-2); }
+/* filled vs. placeholder — visibly lighter, not just a hair different */
+input:not(:placeholder-shown), textarea:not(:placeholder-shown) { background-color: var(--parchment-2); }
 input:focus, textarea:focus, input:focus-visible, textarea:focus-visible {
   outline: none;
-  box-shadow: inset 2px 2px 0 rgba(22, 11, 14, 0.32), inset -1px -1px 0 rgba(255, 255, 255, 0.4), 0 0 0 2px var(--focus-color);
+  box-shadow:
+    inset 0 3px 6px rgba(22, 11, 14, 0.38),
+    inset 2px 3px 5px rgba(22, 11, 14, 0.3),
+    inset -1px -2px 3px rgba(255, 255, 255, 0.7),
+    0 0 0 2px var(--focus-color);
 }
 input:disabled, textarea:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-  background: var(--parchment-3);
+  background-color: var(--parchment-3);
 }
 input.has-error, textarea.has-error {
-  box-shadow: inset 2px 2px 0 rgba(158, 43, 37, 0.38), inset -1px -1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 3px 6px rgba(158, 43, 37, 0.4),
+    inset 2px 2px 4px rgba(158, 43, 37, 0.3),
+    inset -1px -2px 3px rgba(255, 255, 255, 0.55);
 }
 input.has-error:focus, textarea.has-error:focus {
-  box-shadow: inset 2px 2px 0 rgba(158, 43, 37, 0.45), inset -1px -1px 0 rgba(255, 255, 255, 0.3), 0 0 0 2px var(--focus-color);
+  box-shadow:
+    inset 0 3px 6px rgba(158, 43, 37, 0.45),
+    inset 2px 3px 5px rgba(158, 43, 37, 0.35),
+    inset -1px -2px 3px rgba(255, 255, 255, 0.55),
+    0 0 0 2px var(--focus-color);
 }
 
 label {
@@ -317,7 +361,8 @@ label {
 .field-select[data-open="true"] .field-select-chevron { transform: rotate(180deg); }
 .field-select-list {
   position: absolute; top: calc(100% + var(--space-2)); left: 0; right: 0; z-index: 30;
-  background: var(--parchment-2); border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--grain-url) repeat, var(--parchment-2); background-size: 96px 96px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
   list-style: none; margin: 0; padding: var(--space-1); max-height: 240px; overflow-y: auto;
   box-shadow: 0 10px 24px rgba(36, 19, 24, 0.22);
 }

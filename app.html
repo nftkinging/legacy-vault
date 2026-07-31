@@ -13,35 +13,23 @@
 <style>
   .wrap { max-width: 680px; margin: 0 auto; padding: var(--space-9) var(--space-4) var(--space-9); position: relative; z-index: 1; }
 
-  /* ---------- masthead ---------- */
-  /* Muted, not gilt — this page's one gilt element is the countdown numeral
-     when a vault exists; nothing else competes for it. */
-  .eyebrow {
-    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.28em;
-    text-transform: uppercase; color: var(--muted); text-align: center; margin-bottom: var(--space-4);
+  /* ---------- slim header ---------- */
+  /* The landing page already sold this; the app doesn't re-sell it. One
+     compact row — mark, wallet state — then straight to work. */
+  .app-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-4); flex-wrap: wrap;
+    padding-bottom: var(--space-4); margin-bottom: var(--space-6);
+    border-bottom: 1px solid var(--rule);
   }
-  h1 { font-size: var(--text-4xl); text-align: center; margin: 0 0 var(--space-2); letter-spacing: 0.01em; }
-  h1 a { color: inherit; text-decoration: none; }
-  .tagline {
-    text-align: center; font-style: italic; color: var(--muted);
-    margin: 0 auto var(--space-2); max-width: 46ch; font-size: var(--text-lg);
-  }
-  .rule {
-    width: 120px; margin: var(--space-5) auto; border: 0; height: 13px;
-    background:
-      linear-gradient(var(--rule), var(--rule)) center 2px / 100% 1px no-repeat,
-      linear-gradient(var(--rule), var(--rule)) center 10px / 60% 1px no-repeat;
-  }
-
-  /* ---------- wallet strip ---------- */
-  .wallet {
-    display: flex; justify-content: space-between; align-items: center;
-    gap: var(--space-3); flex-wrap: wrap;
+  .lockup-h { display: flex; align-items: center; gap: var(--space-3); text-decoration: none; }
+  .lockup-h .mark { width: 26px; height: 26px; flex-shrink: 0; }
+  .lockup-h .word { font-family: var(--font-display); font-weight: 400; font-size: var(--text-lg); letter-spacing: 0.03em; color: var(--text); }
+  .wallet-compact {
+    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
     font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted);
-    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
-    padding: var(--space-3) var(--space-1); margin-bottom: var(--space-7);
   }
-  .wallet .addr { letter-spacing: 0.02em; }
+  .wallet-compact .addr { letter-spacing: 0.02em; }
 
   /* ---------- tabs ---------- */
   .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: var(--space-6); }
@@ -57,7 +45,8 @@
 
   /* ---------- the document card (laid paper) ---------- */
   .doc {
-    background: var(--parchment-2);
+    background: var(--grain-url) repeat, var(--parchment-2);
+    background-size: 96px 96px;
     border: 1px solid var(--rule);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-card);
@@ -92,39 +81,60 @@
   .inline-form[hidden] { display: none; }
 
   /* ---------- vault status: the seal is the centrepiece ---------- */
-  .seal-stage { display: flex; flex-direction: column; align-items: center; margin: var(--space-2) 0 var(--space-4); }
+  /* Asymmetric, not centred-and-stacked: the seal is a physical object
+     sitting to the left with its reading beside it, sized to dominate the
+     card the way the brief asks — "read from across the room." */
+  .seal-stage {
+    display: flex; align-items: center; gap: var(--space-6);
+    text-align: left; margin: var(--space-2) 0 var(--space-6);
+  }
+  .seal-visual { flex-shrink: 0; filter: drop-shadow(3px 5px 6px rgba(36, 19, 24, 0.35)); }
+  .seal-visual svg { display: block; width: 148px; height: 148px; }
+  .seal-info { min-width: 0; }
   /* Gilt on parchment fails contrast for text (measured 2.11:1 — the brief
      explicitly warns against exactly this). The countdown stays --ink for
      legibility; the one gilt element on this view is the decorative rule
      beneath it instead — a foil flourish, not text, so the text-contrast
      rule doesn't apply and nothing is unreadable. */
   .countdown {
-    font-family: var(--font-display); font-size: var(--text-4xl); font-weight: 600;
-    letter-spacing: 0.04em; margin-top: var(--space-3); font-variant-numeric: tabular-nums;
+    font-family: var(--font-display); font-weight: 600;
+    font-size: var(--text-5xl); line-height: 1;
+    letter-spacing: 0.01em; font-variant-numeric: tabular-nums;
     color: var(--text);
   }
   .countdown.warn { color: var(--wax-deep); }
   .countdown.due { color: var(--wax); }
-  .countdown-rule { width: 64px; height: 2px; background: var(--gilt); margin: var(--space-2) auto 0; border: 0; }
+  .countdown-rule { width: 56px; height: 2px; background: var(--gilt); margin: var(--space-2) 0 0; border: 0; }
   .count-label {
-    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.26em;
-    text-transform: uppercase; color: var(--muted); margin-top: var(--space-1);
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--muted); margin-top: var(--space-2); max-width: 26ch;
   }
   .unlock-datetime { font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-1); }
 
-  .facts { margin: var(--space-5) 0 0; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
+  /* Ledger strip: a distinct, slightly recessed zone for the supporting
+     facts, so they read as secondary detail beneath the seal's hierarchy
+     rather than more centred text at the same weight as everything else. */
+  .facts {
+    margin: 0 0 0; padding: var(--space-4) var(--space-5); list-style: none;
+    background: var(--parchment-3);
+    box-shadow: inset 0 2px 4px rgba(22, 11, 14, 0.14);
+    border-radius: var(--radius-sm);
+  }
   .facts li {
     display: flex; justify-content: space-between; gap: var(--space-4);
     padding: var(--space-2) 0; border-bottom: 1px solid var(--rule);
-    font-size: var(--text-base);
+    font-size: var(--text-sm);
   }
-  .facts .k { font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); padding-top: var(--space-1); }
-  .facts .v { font-family: var(--font-data); font-size: var(--text-sm); text-align: right; word-break: break-all; }
+  .facts li:last-child { border-bottom: 0; }
+  .facts .k { font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); padding-top: var(--space-1); }
+  .facts .v { font-family: var(--font-data); font-size: var(--text-xs); text-align: right; word-break: break-all; }
 
   /* ---------- the letter ---------- */
   .letter {
     margin-top: var(--space-5); padding: var(--space-5) var(--space-5);
-    background: var(--parchment-3);
+    background: var(--grain-url) repeat, var(--parchment-3);
+    background-size: 96px 96px;
+    box-shadow: inset 0 2px 5px rgba(22, 11, 14, 0.16), inset -1px -1px 2px rgba(255, 255, 255, 0.5);
     border: 1px solid var(--rule);
     border-radius: var(--radius-sm);
     font-size: var(--text-lg); font-style: italic; line-height: 1.75;
@@ -152,9 +162,12 @@
   footer a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 
   @media (max-width: 520px) {
-    h1 { font-size: var(--text-3xl); }
     .doc { padding: var(--space-6) var(--space-4); }
-    .countdown { font-size: var(--text-3xl); }
+    .seal-stage { flex-direction: column; text-align: center; gap: var(--space-4); }
+    .seal-visual svg { width: 116px; height: 116px; }
+    .countdown { font-size: var(--text-4xl); }
+    .countdown-rule { margin-inline: auto; }
+    .count-label { max-width: none; }
     .interval-control { flex-direction: column; }
   }
 </style>
@@ -162,16 +175,25 @@
 <body data-register="day">
 <div class="wrap">
 
-  <div class="eyebrow">Recorded on BOT Chain &middot; No custodian &middot; No executor</div>
-  <h1><a href="index.html">Legacy Vault</a></h1>
-  <p class="tagline">A letter, and what you leave with it, that opens only if you stop answering.</p>
-  <hr class="rule" />
-
-  <div class="wallet">
-    <span id="walletStatus">Wallet not connected</span>
-    <span class="addr" id="walletAddr"></span>
-    <button id="connectBtn" class="btn-quiet">Connect wallet</button>
-  </div>
+  <header class="app-header">
+    <a class="lockup-h" href="index.html" aria-label="Legacy Vault, home">
+      <svg class="mark" viewBox="0 0 200 200" aria-hidden="true">
+        <defs><radialGradient id="hdrMarkApp" cx="35%" cy="30%" r="78%"><stop offset="0%" stop-color="#B8443C"/><stop offset="52%" stop-color="#9E2B25"/><stop offset="100%" stop-color="#701E1B"/></radialGradient></defs>
+        <path fill="url(#hdrMarkApp)" d="M100.00,26.00 C113.90,25.89 116.90,24.08 129.28,29.32 C141.65,34.57 142.33,38.08 151.97,48.03 C161.61,57.98 164.51,58.73 169.75,71.11 C175.00,83.48 174.55,86.47 174.00,100.00 C173.45,113.53 172.35,115.22 167.44,127.94 C162.54,140.65 159.56,142.92 153.39,153.39 C147.21,163.85 150.47,167.01 141.50,171.88 C132.53,176.75 125.58,173.46 115.70,173.85 C105.82,174.24 110.66,174.37 100.00,173.50 C89.34,172.63 83.21,175.42 70.92,170.21 C58.63,165.01 58.06,161.46 48.38,151.62 C38.70,141.78 35.58,141.18 30.25,128.89 C24.92,116.60 26.22,113.85 26.00,100.00 C25.78,86.15 23.99,83.01 29.32,70.72 C34.65,58.43 38.48,58.13 48.38,48.38 C58.28,38.63 58.63,35.11 70.92,29.79 C83.21,24.46 86.10,26.11 100.00,26.00 Z"/>
+        <g transform="translate(61,64)">
+          <g transform="translate(-0.8,-0.8)" fill="#4A1512" opacity="0.5"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+          <g transform="translate(0.8,0.8)" fill="#C97B6F" opacity="0.4"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+          <g fill="#87231D"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+        </g>
+      </svg>
+      <span class="word">Legacy Vault</span>
+    </a>
+    <div class="wallet-compact">
+      <span id="walletStatus">Wallet not connected</span>
+      <span class="addr" id="walletAddr"></span>
+      <button id="connectBtn" class="btn-quiet">Connect wallet</button>
+    </div>
+  </header>
 
   <div class="tabs">
     <button class="tab active" id="tabLeave">Leave a legacy</button>
@@ -237,11 +259,13 @@
       <h2>Your standing vault</h2>
 
       <div class="seal-stage" id="ownerSealStage">
-        <div id="ownerSeal"></div>
-        <div class="countdown" id="ownerCountdown">—</div>
-        <hr class="countdown-rule">
-        <div class="count-label" id="ownerCountLabel" aria-live="polite">silence remaining before it unlocks</div>
-        <div class="unlock-datetime" id="ownerUnlockAt"></div>
+        <div class="seal-visual" id="ownerSeal"></div>
+        <div class="seal-info">
+          <div class="countdown" id="ownerCountdown">—</div>
+          <hr class="countdown-rule">
+          <div class="count-label" id="ownerCountLabel" aria-live="polite">silence remaining before it unlocks</div>
+          <div class="unlock-datetime" id="ownerUnlockAt"></div>
+        </div>
       </div>
 
       <ul class="facts">
@@ -311,11 +335,13 @@
 
       <div id="claimView" style="display:none;">
         <div class="seal-stage" id="claimSealStage" style="margin-top:var(--space-6);">
-          <div id="claimSeal"></div>
-          <div class="countdown" id="claimCountdown">—</div>
-          <hr class="countdown-rule">
-          <div class="count-label" id="claimCountLabel" aria-live="polite">until the seal may be broken</div>
-          <div class="unlock-datetime" id="claimUnlockAt"></div>
+          <div class="seal-visual" id="claimSeal"></div>
+          <div class="seal-info">
+            <div class="countdown" id="claimCountdown">—</div>
+            <hr class="countdown-rule">
+            <div class="count-label" id="claimCountLabel" aria-live="polite">until the seal may be broken</div>
+            <div class="unlock-datetime" id="claimUnlockAt"></div>
+          </div>
         </div>
 
         <ul class="facts">
