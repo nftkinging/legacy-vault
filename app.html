@@ -10,6 +10,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="brand.css">
+<!-- Wallet connection (Reown AppKit) loads from esm.sh at runtime — warm the
+     connection and start fetching the top-level modules as early as
+     possible so <appkit-button> upgrades sooner instead of popping in
+     seconds after the rest of the page has already settled. -->
+<link rel="preconnect" href="https://esm.sh" crossorigin>
+<link rel="modulepreload" href="https://esm.sh/@reown/appkit@1.8.23">
+<link rel="modulepreload" href="https://esm.sh/@reown/appkit@1.8.23/networks">
+<link rel="modulepreload" href="https://esm.sh/@reown/appkit-adapter-ethers@1.8.23">
 <style>
   .wrap { max-width: 680px; margin: 0 auto; padding: var(--space-9) var(--space-4) var(--space-9); position: relative; z-index: 1; }
 
@@ -26,9 +34,56 @@
   .lockup-h .mark { width: 26px; height: 26px; flex-shrink: 0; }
   .lockup-h .word { font-family: var(--font-display); font-weight: 400; font-size: var(--text-lg); letter-spacing: 0.03em; color: var(--text); }
   .wallet-compact {
-    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
-    font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted);
+    display: grid; justify-items: end; align-items: center;
+    min-width: 116px; min-height: 40px;
   }
+  /* <appkit-button> is an undefined custom element until its module loads
+     from esm.sh — with no reserved size of its own, it pops in seconds
+     after load and shoves the header sideways. Both sit in the same grid
+     cell (stacked, not side by side) so swapping one for the other is a
+     pure opacity cross-fade at a fixed size — never a resize. Dimensions
+     below are the real measured size of the disconnected button in
+     production, not a guess. */
+  .wallet-compact > * { grid-area: 1 / 1; }
+  .wallet-skeleton {
+    width: 116px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--wax); color: var(--parchment-2);
+    border: none; border-radius: 2px; cursor: not-allowed;
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
+    opacity: 1; transition: opacity var(--duration-state) var(--ease);
+  }
+  appkit-button { opacity: 0; transition: opacity var(--duration-state) var(--ease); }
+  .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
+  .wallet-compact.is-ready.is-desktop appkit-button { opacity: 1; }
+
+  /* Mobile leads with a direct wallet-app deep link (a plain synchronous
+     navigation) rather than the AppKit modal, because WalletConnect's
+     pairing URI is generated asynchronously and mobile browsers only allow
+     a wallet-app deep link to fire within the click's synchronous user-
+     gesture window — confirmed against real Reown/WalletConnect issues
+     while debugging Batch 4.2. WalletConnect stays available as a fallback
+     for wallets other than MetaMask, just demoted to secondary. */
+  .wallet-mobile-actions {
+    display: none; flex-direction: column; align-items: end; gap: var(--space-2);
+    opacity: 0; transition: opacity var(--duration-state) var(--ease);
+  }
+  .wallet-compact.is-ready.is-mobile .wallet-mobile-actions { display: flex; opacity: 1; }
+  .wallet-mobile-primary {
+    background: var(--wax); color: var(--parchment-2);
+    border: none; border-radius: 2px; padding: var(--space-3) var(--space-5);
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
+    text-decoration: none; cursor: pointer; white-space: nowrap;
+  }
+  .wallet-mobile-primary:hover { background: var(--wax-hover); }
+  .wallet-mobile-primary:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+  .wallet-mobile-secondary {
+    background: none; border: none; padding: 0; cursor: pointer;
+    color: var(--muted); font-family: var(--font-data); font-size: var(--text-xs);
+    text-decoration: underline; text-underline-offset: 2px; white-space: nowrap;
+  }
+  .wallet-mobile-secondary:hover { color: var(--ink); }
+  .wallet-mobile-secondary:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 
   .wrong-network-banner[hidden] { display: none; }
   .wrong-network-banner {
@@ -205,8 +260,13 @@
       </svg>
       <span class="word">Legacy Vault</span>
     </a>
-    <div class="wallet-compact">
+    <div class="wallet-compact" id="walletCompact">
+      <button type="button" class="wallet-skeleton" id="walletSkeleton" disabled aria-hidden="true">Connect Wallet</button>
       <appkit-button balance="show"></appkit-button>
+      <div class="wallet-mobile-actions" id="walletMobileActions" hidden>
+        <a id="mobileWalletDeepLink" class="wallet-mobile-primary" href="#" rel="noopener">Open in MetaMask</a>
+        <button type="button" id="mobileWalletConnectBtn" class="wallet-mobile-secondary">or connect via WalletConnect</button>
+      </div>
     </div>
   </header>
 
@@ -510,6 +570,67 @@
   // ---- CONFIG: shared with index.html via config.js ----
   const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
+
+  function isMobileUA() { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
+  function metamaskDeepLink() {
+    return `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
+  }
+
+  // A previous connection attempt that never finished (backed out of the
+  // wallet app, closed the tab mid-pairing) can leave a WalletConnect
+  // pairing behind that the relay still considers active — the next
+  // attempt then fails with "Connection declined. Connection can be
+  // declined if a previous request is still active", even though nothing
+  // is actually using that pairing anymore. Clearing every existing
+  // pairing before opening a fresh connection attempt is safe: an
+  // in-progress *session* (a real, connected wallet) isn't a pairing
+  // waiting to be used and isn't touched by this.
+  async function clearStaleWalletConnectPairings() {
+    try {
+      const appKit = window.__legacyVaultAppKit;
+      const universalProvider = appKit && appKit.getUniversalProvider && await appKit.getUniversalProvider();
+      const pairings = universalProvider && universalProvider.client && universalProvider.client.pairing
+        ? universalProvider.client.pairing.getAll()
+        : [];
+      for (const p of pairings) {
+        try {
+          await universalProvider.client.disconnect({
+            topic: p.topic,
+            reason: { code: 6000, message: 'Stale pairing cleared before new connection attempt' }
+          });
+        } catch (e) { /* best effort — a pairing already gone is not an error */ }
+      }
+    } catch (e) {
+      console.warn('Could not clear stale WalletConnect pairings:', e);
+    }
+  }
+
+  document.getElementById('mobileWalletConnectBtn').addEventListener('click', async () => {
+    await clearStaleWalletConnectPairings();
+    window.__legacyVaultAppKit.open();
+  });
+
+  // Cross-fade the skeleton for the real connect UI once AppKit has
+  // actually loaded and initialized — not before, since <appkit-button>
+  // has no content (and no reserved size of its own) until then. Mobile
+  // browsers get a direct wallet-app deep link as the primary action
+  // instead of <appkit-button> — see the .wallet-mobile-actions CSS
+  // comment for why. Registered here, ahead of the module script's
+  // dispatch, because classic scripts run before deferred module scripts
+  // regardless of source order.
+  window.addEventListener('legacyvault:appkit-ready', () => {
+    const compact = document.getElementById('walletCompact');
+    if (isMobileUA()) {
+      compact.classList.add('is-ready', 'is-mobile');
+      document.getElementById('mobileWalletDeepLink').href = metamaskDeepLink();
+    } else {
+      compact.classList.add('is-ready', 'is-desktop');
+    }
+  });
+  window.addEventListener('legacyvault:appkit-error', () => {
+    const skeleton = document.getElementById('walletSkeleton');
+    skeleton.textContent = 'Wallet unavailable';
+  });
 
   // ABI matches the hardened contract (contracts/LegacyVault.sol) — `message`
   // is `bytes`, not `string`, and MIN_INTERVAL/MAX_INTERVAL/MIN_DEPOSIT/
