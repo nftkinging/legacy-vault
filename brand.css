@@ -1,0 +1,370 @@
+/* ==========================================================================
+   Legacy Vault — brand.css
+   Shared design system for index.html (night/landing) and app.html (day/app).
+   Per docs/BRAND_DESIGN_BRIEF.md: no page defines its own colour or spacing.
+   ========================================================================== */
+
+/* ---------- 1. Tokens (brief §4, §5, §6, §7) ---------- */
+:root {
+  /* Colour — locked, do not introduce new hues */
+  --ink: #241318;
+  --ink-2: #160B0E;
+  --parchment: #F0E7D6;
+  --parchment-2: #FBF6EC;
+  --parchment-3: #E4D7BF;
+  --wax: #9E2B25;
+  --wax-hover: #AE332C;
+  --wax-deep: #6E1D1A;
+  --gilt: #C39B4A;
+  --text: #2A1E22;
+  --muted: #6E5F54;
+  --rule: #C9B99B;
+  --ok: #4C6B3C;
+
+  /* On night (landing) pages, text/muted read against --ink, not parchment */
+  --text-on-ink: var(--parchment);
+  --muted-on-ink: #B9A99A;
+
+  /* Type */
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-interface: 'Cormorant Garamond', Georgia, serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Scale, 1.25 ratio: 12/14/16/20/25/31/39/49/61 */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 25px;
+  --text-2xl: 31px;
+  --text-3xl: 39px;
+  --text-4xl: 49px;
+  --text-5xl: 61px;
+
+  /* Space, 8px base unit */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 128px;
+
+  /* Radius: paper is cut, not moulded */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+
+  /* Motion */
+  --duration-state: 150ms;
+  --duration-transition: 250ms;
+  --duration-entrance: 400ms;
+  --duration-seal: 1200ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Warm-tinted shadows only — never black. Raised = light source (upper-left)
+     casts a shadow down-right. Tight blur, small offsets. */
+  --shadow-raised-sm: 0 2px 0 var(--wax-deep), 0 4px 8px -2px rgba(110, 29, 26, 0.4);
+  --shadow-raised-hover: 0 3px 0 var(--wax-deep), 0 6px 12px -2px rgba(110, 29, 26, 0.45);
+  --shadow-raised-active: 0 1px 0 var(--wax-deep), 0 2px 4px -1px rgba(110, 29, 26, 0.35);
+  --shadow-card: 0 1px 2px rgba(36, 19, 24, 0.10), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
+  /* Direct value, not chained through another custom property: a custom
+     property that references a second custom property does not
+     re-resolve per descendant in Chromium when only the inner one is
+     overridden lower in the cascade — confirmed by testing, not assumed.
+     Every use site below references --focus-color directly rather than a
+     second, chained custom property for the same reason. */
+  --focus-color: var(--gilt);
+
+  /* One tiling paper-grain texture, 2-4% opacity, used only on parchment
+     surfaces. A real file (not an inline data URI) — a hand-authored CSS
+     file is a fragile place to carry several KB of base64 through edits. */
+  --grain-url: url("brand/grain.png");
+}
+
+/* ---------- 2. Base ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font-interface);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+h1, h2, h3, h4 { text-wrap: balance; font-weight: 600; margin: 0; }
+
+/* Registers */
+body[data-register="night"] {
+  background: var(--ink);
+  color: var(--text-on-ink);
+}
+body[data-register="day"] {
+  background: var(--parchment);
+  color: var(--text);
+  position: relative;
+  /* Gilt fails 3:1 non-text contrast against every parchment surface
+     (measured 1.8-2.4:1) — a focus ring in it would be nearly invisible.
+     Wax measures 6+:1 on parchment, so the day register gets a wax focus
+     ring instead; night keeps the token default (gilt on ink is 6.86:1). */
+  --focus-color: var(--wax);
+}
+/* Paper grain: one tiling texture at low opacity, parchment surfaces only */
+body[data-register="day"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: var(--grain-url);
+  background-repeat: repeat;
+  background-size: 96px 96px;
+  opacity: 0.035;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---------- 3. Material: laid paper (cards/panels) ---------- */
+.card-laid {
+  background: var(--parchment-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+/* ---------- 4. Material: ruled divider ---------- */
+.rule-line {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+/* ---------- 5. Material: gilt foil accent ---------- */
+/* Apply to exactly one element per view. Never for body text — gilt on
+   parchment fails 4.5:1 (measured: ~2.1:1); only ever use it on --ink. */
+.gilt-accent {
+  color: var(--gilt);
+}
+
+/* ---------- 6. Buttons ---------- */
+button {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-5);
+  transition: background var(--duration-state) var(--ease),
+              color var(--duration-state) var(--ease),
+              border-color var(--duration-state) var(--ease),
+              box-shadow var(--duration-state) var(--ease),
+              transform var(--duration-state) var(--ease),
+              filter var(--duration-state) var(--ease);
+}
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-color);
+}
+
+/* Primary — wax seal material. Resting: raised, warm shadow. Hover: lifts
+   ~1px, warms. Active: compresses, shadow collapses, deepens to --wax-deep.
+   Loading: spinner replaces label, width pinned inline (JS) so nothing
+   reflows. Disabled: desaturates, does not merely fade. */
+.btn-wax {
+  background: var(--wax);
+  color: var(--parchment-2);
+  border: 1px solid var(--wax-deep);
+  box-shadow: var(--shadow-raised-sm);
+  transform: translateY(0);
+}
+.btn-wax:hover:not(:disabled):not(.is-loading) {
+  background: var(--wax-hover);
+  box-shadow: var(--shadow-raised-hover);
+  transform: translateY(-1px);
+}
+.btn-wax:active:not(:disabled):not(.is-loading) {
+  background: var(--wax-deep);
+  box-shadow: var(--shadow-raised-active);
+  transform: translateY(1px);
+}
+.btn-wax.is-loading { cursor: wait; }
+.btn-wax:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.65) brightness(0.92);
+  box-shadow: 0 2px 0 rgba(90, 80, 78, 0.3);
+  transform: none;
+}
+
+/* Secondary — ink rule material. Hairline border, no fill. */
+.btn-ink {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+}
+body[data-register="night"] .btn-ink { color: var(--text-on-ink); border-color: var(--text-on-ink); }
+.btn-ink:hover:not(:disabled) { background: rgba(36, 19, 24, 0.06); }
+body[data-register="night"] .btn-ink:hover:not(:disabled) { background: rgba(240, 231, 214, 0.08); }
+.btn-ink:active:not(:disabled) { background: rgba(36, 19, 24, 0.12); transform: translateY(1px); }
+.btn-ink:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Quiet — text-only tertiary (cancel, dismiss) */
+.btn-quiet {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--muted);
+}
+.btn-quiet:hover:not(:disabled) { color: var(--ink); border-color: var(--ink); }
+.btn-quiet:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Danger — same ink-rule shape, wax-red ink (irreversible-adjacent actions,
+   e.g. closing a vault; never used for primary commitment) */
+.btn-danger {
+  background: transparent;
+  color: var(--wax);
+  border: 1px solid var(--wax);
+}
+.btn-danger:hover:not(:disabled) { background: var(--wax); color: var(--parchment-2); }
+.btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Foil — gilt material, for the one most-important action on a screen that
+   is NOT a chain write (wax is reserved for commitment; navigation/entry
+   points use foil instead). This is the "exactly one gilt element per view"
+   budget spent on an action rather than a label. */
+.btn-gilt {
+  background: var(--gilt);
+  color: var(--ink-2);
+  border: 1px solid var(--gilt);
+}
+.btn-gilt:hover:not(:disabled) { background: transparent; color: var(--gilt); }
+.btn-gilt:active:not(:disabled) { transform: translateY(1px); }
+.btn-gilt:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Loading spinner: a small turning wax-seal arc, not a generic spinner. */
+.spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: var(--space-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: seal-spin 0.8s linear infinite;
+  vertical-align: -1.5px;
+}
+@keyframes seal-spin { to { transform: rotate(360deg); } }
+
+/* ---------- 7. Inputs — letterpress material ---------- */
+/* Resting: debossed into the paper (dark inset top-left, light bottom-right).
+   Focus: gilt hairline ring + deeper inset. Error: inset shifts to wax red,
+   message sits below (never a tooltip). Filled is visually distinct from
+   placeholder via a lighter paper tone. */
+input, textarea, select, .field-select-trigger {
+  width: 100%;
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--parchment-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-3);
+  box-shadow: inset 1.5px 1.5px 0 rgba(22, 11, 14, 0.20), inset -1px -1px 0 rgba(255, 255, 255, 0.35);
+  transition: box-shadow var(--duration-state) var(--ease), background var(--duration-state) var(--ease);
+}
+textarea { font-family: var(--font-display); font-size: var(--text-lg); line-height: 1.6; min-height: 110px; resize: vertical; }
+input:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus) {
+  box-shadow: inset 1.5px 1.5px 0 rgba(22, 11, 14, 0.26), inset -1px -1px 0 rgba(255, 255, 255, 0.4);
+}
+/* filled vs. placeholder */
+input:not(:placeholder-shown), textarea:not(:placeholder-shown) { background: var(--parchment-2); }
+input:focus, textarea:focus, input:focus-visible, textarea:focus-visible {
+  outline: none;
+  box-shadow: inset 2px 2px 0 rgba(22, 11, 14, 0.32), inset -1px -1px 0 rgba(255, 255, 255, 0.4), 0 0 0 2px var(--focus-color);
+}
+input:disabled, textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--parchment-3);
+}
+input.has-error, textarea.has-error {
+  box-shadow: inset 2px 2px 0 rgba(158, 43, 37, 0.38), inset -1px -1px 0 rgba(255, 255, 255, 0.3);
+}
+input.has-error:focus, textarea.has-error:focus {
+  box-shadow: inset 2px 2px 0 rgba(158, 43, 37, 0.45), inset -1px -1px 0 rgba(255, 255, 255, 0.3), 0 0 0 2px var(--focus-color);
+}
+
+label {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.field-hint { font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-2); line-height: 1.5; }
+.field-error-text { font-family: var(--font-data); font-size: var(--text-xs); color: var(--wax); margin-top: var(--space-2); line-height: 1.5; }
+
+/* ---------- 8. Custom select (listbox) — same letterpress language ---------- */
+.field-select { position: relative; }
+.field-select-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  cursor: pointer; text-transform: none; letter-spacing: normal; font-weight: 400;
+}
+.field-select-trigger span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field-select-chevron { flex-shrink: 0; color: var(--muted); transition: transform var(--duration-state) var(--ease); }
+.field-select[data-open="true"] .field-select-chevron { transform: rotate(180deg); }
+.field-select-list {
+  position: absolute; top: calc(100% + var(--space-2)); left: 0; right: 0; z-index: 30;
+  background: var(--parchment-2); border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  list-style: none; margin: 0; padding: var(--space-1); max-height: 240px; overflow-y: auto;
+  box-shadow: 0 10px 24px rgba(36, 19, 24, 0.22);
+}
+.field-select-list[hidden] { display: none; }
+.field-select-list li {
+  font-family: var(--font-data); font-size: var(--text-sm); padding: var(--space-2) var(--space-3);
+  cursor: pointer; border-radius: var(--radius-sm); color: var(--text);
+}
+.field-select-list li:hover, .field-select-list li:focus { background: rgba(195, 155, 74, 0.22); outline: none; }
+.field-select-list li:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-color); }
+.field-select-list li[aria-selected="true"] { font-weight: 600; }
+
+/* ---------- 9. Status text ---------- */
+.msg-line { font-family: var(--font-data); font-size: var(--text-xs); margin-top: var(--space-4); text-align: center; min-height: 18px; }
+.msg-line.err { color: var(--wax); }
+.msg-line.ok { color: var(--ok); }
+/* Not gilt: it can appear alongside the countdown (the view's one gilt
+   element), and gilt never doubles up. */
+.tx-link {
+  display: none; font-family: var(--font-data); font-size: var(--text-xs); text-align: center;
+  margin-top: var(--space-2); color: var(--muted); text-decoration: underline; text-underline-offset: 2px;
+}
+.empty-state {
+  font-family: var(--font-display); font-style: italic; color: var(--muted);
+  text-align: center; padding: var(--space-5) var(--space-3); font-size: var(--text-base);
+  line-height: 1.6;
+}
+
+/* ---------- 10. Network badge ---------- */
+.network-badge {
+  display: inline-block; border: 1px solid var(--gilt); color: var(--gilt);
+  border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2);
+  font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* ---------- 11. Seal status display ---------- */
+/* The seal IS the mark (same blob + monogram construction) reused as the
+   app's primary status readout: intact / hairline warning / cracked. State
+   changes get a brief warm flash rather than a full animation — "a state
+   change, not an animation playing" degrades identically whether or not
+   reduced-motion is honoured, since the flash is instant either way; full
+   motion just gets the transition, reduced motion gets the same endpoint
+   with the transition zeroed by the rule below. */
+.seal-stage svg { transition: transform var(--duration-transition) var(--ease), filter var(--duration-transition) var(--ease); }
+.seal-stage.seal-changed svg { transform: scale(1.06); filter: brightness(1.18); }
+
+/* ---------- 12. Motion accessibility ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

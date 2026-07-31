@@ -4,279 +4,162 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Legacy Vault — a letter that opens only if you stop answering</title>
+<link rel="icon" href="brand/mark-mini.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="brand.css">
 <style>
-  :root {
-    --paper: #F0E7D6;
-    --paper-deep: #E4D8BE;
-    --ink: #241318;
-    --ink-soft: #6E5A52;
-    --seal: #9E2B25;
-    --seal-dark: #74201C;
-    --gilt: #C39B4A;
-    --ok: #4C6B3C;
-    --serif: 'Cormorant Garamond', Georgia, serif;
-    --mono: 'IBM Plex Mono', monospace;
-    --transition: 200ms ease;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; }
-  body {
-    background: var(--paper);
-    background-image:
-      radial-gradient(ellipse at 50% -10%, rgba(195,155,74,0.14), transparent 55%),
-      radial-gradient(ellipse at 90% 110%, rgba(158,43,37,0.06), transparent 50%);
-    color: var(--ink);
-    font-family: var(--serif);
-    font-size: 18px;
-    line-height: 1.55;
-    min-height: 100vh;
-  }
-  .wrap { max-width: 680px; margin: 0 auto; padding: 44px 20px 90px; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: var(--space-9) var(--space-4) var(--space-9); position: relative; z-index: 1; }
 
   /* ---------- masthead ---------- */
+  /* Muted, not gilt — this page's one gilt element is the countdown numeral
+     when a vault exists; nothing else competes for it. */
   .eyebrow {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.28em;
-    text-transform: uppercase; color: var(--gilt); text-align: center; margin-bottom: 14px;
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.28em;
+    text-transform: uppercase; color: var(--muted); text-align: center; margin-bottom: var(--space-4);
   }
-  h1 {
-    font-size: 52px; font-weight: 600; text-align: center;
-    margin: 0 0 6px; letter-spacing: 0.01em;
-  }
+  h1 { font-size: var(--text-4xl); text-align: center; margin: 0 0 var(--space-2); letter-spacing: 0.01em; }
   h1 a { color: inherit; text-decoration: none; }
   .tagline {
-    text-align: center; font-style: italic; color: var(--ink-soft);
-    margin: 0 auto 8px; max-width: 46ch; font-size: 20px;
+    text-align: center; font-style: italic; color: var(--muted);
+    margin: 0 auto var(--space-2); max-width: 46ch; font-size: var(--text-lg);
   }
   .rule {
-    width: 120px; margin: 22px auto; border: 0; height: 13px;
+    width: 120px; margin: var(--space-5) auto; border: 0; height: 13px;
     background:
-      linear-gradient(var(--gilt), var(--gilt)) center 2px / 100% 1px no-repeat,
-      linear-gradient(var(--gilt), var(--gilt)) center 10px / 60% 1px no-repeat;
+      linear-gradient(var(--rule), var(--rule)) center 2px / 100% 1px no-repeat,
+      linear-gradient(var(--rule), var(--rule)) center 10px / 60% 1px no-repeat;
   }
 
   /* ---------- wallet strip ---------- */
   .wallet {
     display: flex; justify-content: space-between; align-items: center;
-    gap: 12px; flex-wrap: wrap;
-    font-family: var(--mono); font-size: 12px; color: var(--ink-soft);
-    border-top: 1px solid var(--gilt); border-bottom: 1px solid var(--gilt);
-    padding: 10px 4px; margin-bottom: 34px;
+    gap: var(--space-3); flex-wrap: wrap;
+    font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted);
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    padding: var(--space-3) var(--space-1); margin-bottom: var(--space-7);
   }
   .wallet .addr { letter-spacing: 0.02em; }
 
-  /* ---------- buttons ---------- */
-  button {
-    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
-    text-transform: uppercase; cursor: pointer;
-    background: var(--ink); color: var(--paper);
-    border: 1px solid var(--ink);
-    padding: 11px 20px; border-radius: 2px;
-    transition: background var(--transition), color var(--transition), border-color var(--transition), opacity var(--transition);
-  }
-  button:hover:not(:disabled) { background: transparent; color: var(--ink); }
-  button:disabled { opacity: 0.45; cursor: not-allowed; }
-  button.is-busy { opacity: 0.85; cursor: wait; }
-  button.seal-btn { background: var(--seal); border-color: var(--seal); color: var(--paper); }
-  button.seal-btn:hover:not(:disabled) { background: transparent; color: var(--seal); }
-  button.quiet { background: transparent; color: var(--ink-soft); border-color: var(--ink-soft); }
-  button.quiet:hover:not(:disabled) { color: var(--ink); border-color: var(--ink); }
-  button.danger { background: transparent; color: var(--seal); border-color: var(--seal); }
-  button.danger:hover:not(:disabled) { background: var(--seal); color: var(--paper); }
-  button:focus-visible, input:focus-visible, textarea:focus-visible, .cselect-trigger:focus-visible {
-    outline: 2px solid var(--seal); outline-offset: 2px;
-  }
-
-  /* ---------- spinner (loading state) ---------- */
-  .spinner {
-    display: inline-block; width: 10px; height: 10px; margin-right: 8px;
-    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
-    animation: spin 0.7s linear infinite; vertical-align: -1px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner { animation: none; opacity: 0.7; }
-  }
-
   /* ---------- tabs ---------- */
-  .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: 30px; }
+  .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: var(--space-6); }
   .tab {
-    font-family: var(--serif); font-size: 21px; font-style: italic;
-    background: none; border: none; color: var(--ink-soft);
-    padding: 6px 22px; text-transform: none; letter-spacing: 0;
-    border-bottom: 1px solid transparent;
+    font-family: var(--font-display); font-size: var(--text-lg); font-style: italic;
+    background: none; border: none; color: var(--muted);
+    padding: var(--space-2) var(--space-5); text-transform: none; letter-spacing: 0;
+    border-bottom: 1px solid transparent; border-radius: 0;
   }
-  .tab:hover:not(:disabled) { background: none; color: var(--ink); }
-  .tab.active { color: var(--ink); border-bottom: 1px solid var(--seal); font-weight: 600; }
+  .tab:hover:not(:disabled) { background: none; color: var(--text); }
+  .tab:focus-visible { box-shadow: none; outline: none; border-bottom-color: var(--muted); }
+  .tab.active { color: var(--text); border-bottom: 1px solid var(--wax); font-weight: 600; }
 
-  /* ---------- the document card ---------- */
+  /* ---------- the document card (laid paper) ---------- */
   .doc {
-    border: 1px solid var(--ink);
-    outline: 1px solid var(--gilt);
-    outline-offset: 5px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 120px);
-    padding: 34px 30px;
-    margin: 12px 6px 26px;
+    background: var(--parchment-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-7) var(--space-6);
+    margin: var(--space-3) var(--space-1) var(--space-6);
   }
   .doc h2 {
-    font-size: 15px; font-family: var(--mono); font-weight: 500;
+    font-size: var(--text-sm); font-family: var(--font-data); font-weight: 500;
     letter-spacing: 0.24em; text-transform: uppercase;
-    text-align: center; margin: 0 0 24px; color: var(--gilt);
+    text-align: center; margin: 0 0 var(--space-5); color: var(--muted);
   }
 
-  label {
-    display: block; font-family: var(--mono); font-size: 11px;
-    letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--ink-soft); margin: 20px 0 6px;
-  }
-  input, select, textarea {
-    width: 100%; background: rgba(255,255,255,0.4);
-    border: 1px solid var(--ink-soft); border-radius: 2px;
-    font-family: var(--mono); font-size: 14px; color: var(--ink);
-    padding: 10px 12px;
-    transition: border-color var(--transition), background var(--transition);
-  }
-  input:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus) { border-color: var(--ink); }
-  input:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; background: rgba(0,0,0,0.03); }
-  input.has-error, textarea.has-error, .cselect-trigger.has-error { border-color: var(--seal); }
-  textarea { font-family: var(--serif); font-size: 18px; min-height: 110px; resize: vertical; }
-  .inline { display: flex; gap: 10px; }
+  .inline { display: flex; gap: var(--space-3); }
   .inline > * { flex: 1; }
   .inline > button { flex: 0 0 auto; }
 
-  .field-hint {
-    font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
-    margin-top: 6px; line-height: 1.5;
-  }
-  .field-error-text {
-    font-family: var(--mono); font-size: 11.5px; color: var(--seal);
-    margin-top: 6px; line-height: 1.5;
-  }
   .char-counter { text-align: right; }
-  .char-counter.over { color: var(--seal); }
+  .char-counter.over { color: var(--wax); }
 
-  .actions { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+  .actions { display: flex; gap: var(--space-3); margin-top: var(--space-6); flex-wrap: wrap; justify-content: center; }
 
-  /* ---------- custom select (interval quick-pick) ---------- */
-  .interval-control { display: flex; gap: 10px; align-items: stretch; }
+  /* ---------- interval control (uses brand.css field-select) ---------- */
+  .interval-control { display: flex; gap: var(--space-3); align-items: stretch; }
   /* flex-basis:0 (not auto) so grow ratio alone decides width — otherwise
      the input's `width:100%` (from the generic input rule) becomes its
      flex-basis and claims nearly all the row before any space-sharing. */
   .interval-control input#intervalDays { flex: 1 1 0; min-width: 0; }
-  .cselect { position: relative; flex: 1 1 0; min-width: 0; }
-  .cselect-trigger {
-    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    background: rgba(255,255,255,0.4); border: 1px solid var(--ink-soft); border-radius: 2px;
-    font-family: var(--mono); font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
-    color: var(--ink); padding: 10px 12px; cursor: pointer;
-  }
-  .cselect-trigger span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cselect-trigger:hover:not(:disabled) { border-color: var(--ink); background: rgba(255,255,255,0.4); color: var(--ink); }
-  .cselect-chevron { flex-shrink: 0; color: var(--ink-soft); transition: transform var(--transition); }
-  .cselect[data-open="true"] .cselect-chevron { transform: rotate(180deg); }
-  .cselect-list {
-    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
-    background: var(--paper); border: 1px solid var(--ink-soft); border-radius: 2px;
-    list-style: none; margin: 0; padding: 4px; max-height: 240px; overflow-y: auto;
-    box-shadow: 0 10px 28px rgba(36,19,24,0.22);
-  }
-  .cselect-list[hidden] { display: none; }
-  .cselect-list li {
-    font-family: var(--mono); font-size: 13px; padding: 9px 10px; cursor: pointer;
-    border-radius: 2px; color: var(--ink);
-  }
-  .cselect-list li:hover, .cselect-list li:focus { background: rgba(195,155,74,0.22); outline: none; }
-  .cselect-list li:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
+  .interval-control .field-select { flex: 1 1 0; min-width: 0; }
 
   /* ---------- inline forms (replace prompt() dialogs) ---------- */
-  .inline-form { margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--paper-deep); }
+  .inline-form { margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px dashed var(--rule); }
   .inline-form[hidden] { display: none; }
 
-  /* ---------- vault status ---------- */
-  .seal-stage { display: flex; flex-direction: column; align-items: center; margin: 6px 0 18px; }
+  /* ---------- vault status: the seal is the centrepiece ---------- */
+  .seal-stage { display: flex; flex-direction: column; align-items: center; margin: var(--space-2) 0 var(--space-4); }
+  /* Gilt on parchment fails contrast for text (measured 2.11:1 — the brief
+     explicitly warns against exactly this). The countdown stays --ink for
+     legibility; the one gilt element on this view is the decorative rule
+     beneath it instead — a foil flourish, not text, so the text-contrast
+     rule doesn't apply and nothing is unreadable. */
   .countdown {
-    font-family: var(--serif); font-size: 44px; font-weight: 600;
-    letter-spacing: 0.04em; margin-top: 10px; font-variant-numeric: tabular-nums;
+    font-family: var(--font-display); font-size: var(--text-4xl); font-weight: 600;
+    letter-spacing: 0.04em; margin-top: var(--space-3); font-variant-numeric: tabular-nums;
+    color: var(--text);
   }
-  .countdown.due { color: var(--seal); }
-  .countdown.warn { color: var(--seal-dark); }
+  .countdown.warn { color: var(--wax-deep); }
+  .countdown.due { color: var(--wax); }
+  .countdown-rule { width: 64px; height: 2px; background: var(--gilt); margin: var(--space-2) auto 0; border: 0; }
   .count-label {
-    font-family: var(--mono); font-size: 10px; letter-spacing: 0.26em;
-    text-transform: uppercase; color: var(--ink-soft); margin-top: 2px;
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.26em;
+    text-transform: uppercase; color: var(--muted); margin-top: var(--space-1);
   }
-  .unlock-datetime {
-    font-family: var(--mono); font-size: 12px; color: var(--ink-soft); margin-top: 4px;
-  }
-  .facts {
-    margin: 22px 0 0; padding: 0; list-style: none;
-    border-top: 1px solid var(--paper-deep);
-  }
+  .unlock-datetime { font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-1); }
+
+  .facts { margin: var(--space-5) 0 0; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
   .facts li {
-    display: flex; justify-content: space-between; gap: 14px;
-    padding: 9px 2px; border-bottom: 1px solid var(--paper-deep);
-    font-size: 16px;
+    display: flex; justify-content: space-between; gap: var(--space-4);
+    padding: var(--space-2) 0; border-bottom: 1px solid var(--rule);
+    font-size: var(--text-base);
   }
-  .facts .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft); padding-top: 4px; }
-  .facts .v { font-family: var(--mono); font-size: 13px; text-align: right; word-break: break-all; }
+  .facts .k { font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); padding-top: var(--space-1); }
+  .facts .v { font-family: var(--font-data); font-size: var(--text-sm); text-align: right; word-break: break-all; }
 
   /* ---------- the letter ---------- */
   .letter {
-    margin-top: 24px; padding: 22px 24px;
-    background: rgba(255,255,255,0.45);
-    border: 1px solid var(--paper-deep);
-    font-size: 19px; font-style: italic; line-height: 1.7;
+    margin-top: var(--space-5); padding: var(--space-5) var(--space-5);
+    background: var(--parchment-3);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-lg); font-style: italic; line-height: 1.75;
     position: relative; word-break: break-word;
   }
   .letter.sealed { filter: blur(6px); user-select: none; pointer-events: none; }
   .letter-frame { position: relative; }
   .sealed-note {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase;
-    color: var(--seal);
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--wax);
   }
 
-  .msg-line { font-family: var(--mono); font-size: 12.5px; margin-top: 16px; text-align: center; min-height: 18px; }
-  .msg-line.err { color: var(--seal); }
-  .msg-line.ok { color: var(--ok); }
-  .tx-link {
-    display: none; font-family: var(--mono); font-size: 11.5px; text-align: center;
-    margin-top: 6px; color: var(--gilt); text-decoration: underline; text-underline-offset: 2px;
-  }
+  .beneficiary-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+  .beneficiary-list button { width: 100%; margin-bottom: var(--space-2); text-transform: none; letter-spacing: 0.03em; }
 
-  .empty-state {
-    font-family: var(--serif); font-style: italic; color: var(--ink-soft);
-    text-align: center; padding: 20px 10px; font-size: 16.5px; line-height: 1.6;
-  }
-
-  .beneficiary-list { list-style: none; margin: 10px 0 0; padding: 0; }
-  .beneficiary-list button { width: 100%; margin-bottom: 8px; text-transform: none; letter-spacing: 0.03em; }
-
-  .network-badge {
-    display: inline-block; border: 1px solid var(--gilt); color: var(--gilt);
-    border-radius: 2px; padding: 2px 8px; font-family: var(--mono); font-size: 10.5px;
-    letter-spacing: 0.08em; text-transform: uppercase;
-  }
+  /* This app's network badge stays muted, not gilt — the countdown holds
+     the one-gilt-per-view budget whenever a vault is on screen. */
+  footer .network-badge { border-color: var(--muted); color: var(--muted); }
   footer {
-    display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: center;
-    font-family: var(--mono); font-size: 11px; color: var(--ink-soft); letter-spacing: 0.04em;
-    margin-top: 44px; border-top: 1px solid var(--paper-deep); padding-top: 18px;
+    display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); align-items: center; justify-content: center;
+    font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted); position: relative; z-index: 1;
+    margin-top: var(--space-7); border-top: 1px solid var(--rule); padding-top: var(--space-5);
   }
-  footer a { color: var(--gilt); text-decoration: underline; text-underline-offset: 2px; }
-  footer a:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
+  footer a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 
   @media (max-width: 520px) {
-    h1 { font-size: 38px; }
-    .doc { padding: 26px 18px; }
-    .countdown { font-size: 34px; }
+    h1 { font-size: var(--text-3xl); }
+    .doc { padding: var(--space-6) var(--space-4); }
+    .countdown { font-size: var(--text-3xl); }
     .interval-control { flex-direction: column; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; }
   }
 </style>
 </head>
-<body>
+<body data-register="day">
 <div class="wrap">
 
   <div class="eyebrow">Recorded on BOT Chain &middot; No custodian &middot; No executor</div>
@@ -287,7 +170,7 @@
   <div class="wallet">
     <span id="walletStatus">Wallet not connected</span>
     <span class="addr" id="walletAddr"></span>
-    <button id="connectBtn" class="quiet">Connect wallet</button>
+    <button id="connectBtn" class="btn-quiet">Connect wallet</button>
   </div>
 
   <div class="tabs">
@@ -313,20 +196,20 @@
       <label>Silence allowed before it unlocks</label>
       <div class="interval-control">
         <input id="intervalDays" type="number" min="1" max="3650" step="1" value="30" aria-label="Days of silence" />
-        <div class="cselect" id="presetSelect">
-          <button type="button" class="cselect-trigger" id="presetTrigger" aria-haspopup="listbox" aria-expanded="false">
+        <div class="field-select" id="presetSelect">
+          <button type="button" class="field-select-trigger" id="presetTrigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="presetList">
             <span id="presetLabel">Presets</span>
-            <svg class="cselect-chevron" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
+            <svg class="field-select-chevron" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
               <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
-          <ul class="cselect-list" id="presetList" role="listbox" hidden>
-            <li role="option" tabindex="-1" data-days="7">1 week</li>
-            <li role="option" tabindex="-1" data-days="30">1 month</li>
-            <li role="option" tabindex="-1" data-days="90">3 months</li>
-            <li role="option" tabindex="-1" data-days="180">6 months</li>
-            <li role="option" tabindex="-1" data-days="365">1 year</li>
-            <li role="option" tabindex="-1" data-days="1825">5 years</li>
+          <ul class="field-select-list" id="presetList" role="listbox" hidden aria-label="Interval presets">
+            <li role="option" tabindex="-1" data-days="7" aria-selected="false">1 week</li>
+            <li role="option" tabindex="-1" data-days="30" aria-selected="false">1 month</li>
+            <li role="option" tabindex="-1" data-days="90" aria-selected="false">3 months</li>
+            <li role="option" tabindex="-1" data-days="180" aria-selected="false">6 months</li>
+            <li role="option" tabindex="-1" data-days="365" aria-selected="false">1 year</li>
+            <li role="option" tabindex="-1" data-days="1825" aria-selected="false">5 years</li>
           </ul>
         </div>
       </div>
@@ -344,7 +227,7 @@
       </div>
 
       <div class="actions">
-        <button class="seal-btn" id="createBtn" disabled>Seal the vault</button>
+        <button class="btn-wax" id="createBtn" disabled>Seal the vault</button>
       </div>
       <div class="msg-line" id="createMsg"></div>
       <a class="tx-link" id="createTxLink" target="_blank" rel="noopener"></a>
@@ -353,10 +236,11 @@
     <div class="doc" id="vaultDoc" style="display:none;">
       <h2>Your standing vault</h2>
 
-      <div class="seal-stage">
+      <div class="seal-stage" id="ownerSealStage">
         <div id="ownerSeal"></div>
         <div class="countdown" id="ownerCountdown">—</div>
-        <div class="count-label" id="ownerCountLabel">silence remaining before it unlocks</div>
+        <hr class="countdown-rule">
+        <div class="count-label" id="ownerCountLabel" aria-live="polite">silence remaining before it unlocks</div>
         <div class="unlock-datetime" id="ownerUnlockAt"></div>
       </div>
 
@@ -368,10 +252,10 @@
       </ul>
 
       <div class="actions">
-        <button class="seal-btn" id="checkInBtn">I'm still here</button>
-        <button id="depositToggleBtn">Add funds</button>
-        <button class="quiet" id="withdrawToggleBtn">Withdraw</button>
-        <button class="danger" id="closeToggleBtn">Close vault</button>
+        <button class="btn-wax" id="checkInBtn">I'm still here</button>
+        <button class="btn-ink" id="depositToggleBtn">Add funds</button>
+        <button class="btn-quiet" id="withdrawToggleBtn">Withdraw</button>
+        <button class="btn-danger" id="closeToggleBtn">Close vault</button>
       </div>
       <div class="msg-line" id="ownerMsg"></div>
       <a class="tx-link" id="ownerTxLink" target="_blank" rel="noopener"></a>
@@ -380,8 +264,8 @@
         <label for="depositAmt">BOT to add</label>
         <div class="inline">
           <input id="depositAmt" type="number" min="0" step="0.001" placeholder="0.05" />
-          <button class="seal-btn" id="depositConfirm">Add</button>
-          <button class="quiet" id="depositCancel">Cancel</button>
+          <button class="btn-wax" id="depositConfirm">Add</button>
+          <button class="btn-quiet" id="depositCancel">Cancel</button>
         </div>
         <div class="field-error-text" id="depositError" hidden></div>
       </div>
@@ -390,8 +274,8 @@
         <label for="withdrawAmt">BOT to withdraw</label>
         <div class="inline">
           <input id="withdrawAmt" type="number" min="0" step="0.001" placeholder="0.05" />
-          <button class="seal-btn" id="withdrawConfirm">Withdraw</button>
-          <button class="quiet" id="withdrawCancel">Cancel</button>
+          <button class="btn-wax" id="withdrawConfirm">Withdraw</button>
+          <button class="btn-quiet" id="withdrawCancel">Cancel</button>
         </div>
         <div class="field-hint" id="withdrawHint">A live vault can't drop below the 0.1 BOT minimum — use Close vault to take everything out.</div>
         <div class="field-error-text" id="withdrawError" hidden></div>
@@ -400,8 +284,8 @@
       <div class="inline-form" id="closeForm" hidden>
         <p class="field-hint">This pays out the full remaining balance and permanently closes the vault. You'd need to create a new vault to use this address again.</p>
         <div class="actions">
-          <button class="danger" id="closeConfirm">Yes, close it</button>
-          <button class="quiet" id="closeCancel">Cancel</button>
+          <button class="btn-danger" id="closeConfirm">Yes, close it</button>
+          <button class="btn-quiet" id="closeCancel">Cancel</button>
         </div>
       </div>
     </div>
@@ -414,7 +298,7 @@
       <h2>Letters addressed to you</h2>
 
       <div class="actions" style="margin-top:0;">
-        <button id="findBtn" disabled>Find vaults naming me</button>
+        <button class="btn-ink" id="findBtn" disabled>Find vaults naming me</button>
       </div>
       <p class="empty-state" id="claimEmptyState">Connect your wallet, then search to see any vaults that name your address.</p>
       <ul class="beneficiary-list" id="ownerList"></ul>
@@ -422,14 +306,15 @@
       <label for="ownerLookup">Or look up a vault by its owner's address</label>
       <input id="ownerLookup" placeholder="0x..." autocomplete="off" />
       <div class="actions">
-        <button class="quiet" id="lookupBtn" disabled>Open the record</button>
+        <button class="btn-quiet" id="lookupBtn" disabled>Open the record</button>
       </div>
 
       <div id="claimView" style="display:none;">
-        <div class="seal-stage" style="margin-top:26px;">
+        <div class="seal-stage" id="claimSealStage" style="margin-top:var(--space-6);">
           <div id="claimSeal"></div>
           <div class="countdown" id="claimCountdown">—</div>
-          <div class="count-label" id="claimCountLabel">until the seal may be broken</div>
+          <hr class="countdown-rule">
+          <div class="count-label" id="claimCountLabel" aria-live="polite">until the seal may be broken</div>
           <div class="unlock-datetime" id="claimUnlockAt"></div>
         </div>
 
@@ -444,15 +329,15 @@
           <div class="sealed-note" id="sealedNote" style="display:none;">Still sealed</div>
         </div>
 
-        <div class="inline-form" id="decryptRow" style="display:none; border-top:none; margin-top:16px; padding-top:0;">
+        <div class="inline-form" id="decryptRow" style="display:none; border-top:none; margin-top:var(--space-4); padding-top:0;">
           <div class="inline">
             <input id="passphraseInput" type="password" placeholder="Enter the passphrase to reveal" autocomplete="off" />
-            <button class="quiet" id="revealBtn">Reveal</button>
+            <button class="btn-quiet" id="revealBtn">Reveal</button>
           </div>
         </div>
 
         <div class="actions">
-          <button class="seal-btn" id="claimBtn" disabled>Break the seal &amp; claim</button>
+          <button class="btn-wax" id="claimBtn" disabled>Break the seal &amp; claim</button>
         </div>
       </div>
       <div class="msg-line" id="claimMsg"></div>
@@ -506,6 +391,7 @@
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
   let ownerDeadline = null, ownerTotalInterval = null, claimDeadline = null, claimTargetOwner = null, claimCiphertext = null;
+  let lastOwnerSealState = null, lastClaimSealState = null;
 
   // Fallback constants match contracts/LegacyVault.sol exactly, used only if
   // the live read (below) fails — e.g. wrong network, RPC hiccup. Real
@@ -542,28 +428,64 @@
     updateMsgCounter();
   }
 
-  // ---------- wax seal SVG ----------
-  function sealSVG(cracked, size = 84) {
-    const fill = cracked ? '#8a8578' : 'var(--seal)';
-    const inner = cracked ? '#6f6a5e' : 'var(--seal-dark)';
-    const cracks = cracked ? `
-      <path d="M42 12 L38 34 L46 44 L40 62" stroke="#3f3b33" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      <path d="M16 40 L34 42 M52 46 L70 38" stroke="#3f3b33" stroke-width="1.4" fill="none" stroke-linecap="round"/>` : '';
+  // ---------- the seal: same construction as brand/mark.svg, reused as the
+  // app's primary status display (brief §9 — "a user should read their
+  // vault's state from across the room"). Three states: intact (checked in
+  // recently), warning (hairline cracks, <20% of the silence window left),
+  // cracked (claimable). ----------
+  const SEAL_BLOB_PATH = "M100.00,26.00 C113.90,25.89 116.90,24.08 129.28,29.32 C141.65,34.57 142.33,38.08 151.97,48.03 C161.61,57.98 164.51,58.73 169.75,71.11 C175.00,83.48 174.55,86.47 174.00,100.00 C173.45,113.53 172.35,115.22 167.44,127.94 C162.54,140.65 159.56,142.92 153.39,153.39 C147.21,163.85 150.47,167.01 141.50,171.88 C132.53,176.75 125.58,173.46 115.70,173.85 C105.82,174.24 110.66,174.37 100.00,173.50 C89.34,172.63 83.21,175.42 70.92,170.21 C58.63,165.01 58.06,161.46 48.38,151.62 C38.70,141.78 35.58,141.18 30.25,128.89 C24.92,116.60 26.22,113.85 26.00,100.00 C25.78,86.15 23.99,83.01 29.32,70.72 C34.65,58.43 38.48,58.13 48.38,48.38 C58.28,38.63 58.63,35.11 70.92,29.79 C83.21,24.46 86.10,26.11 100.00,26.00 Z";
+  let sealIdCounter = 0;
+
+  function sealSVG(state, size = 96) {
+    const cracked = state === 'cracked';
+    const warning = state === 'warning';
+    const gradId = 'sealGrad' + (sealIdCounter++);
+    const stops = cracked
+      ? '<stop offset="0%" stop-color="#9C9086"/><stop offset="52%" stop-color="#7D7367"/><stop offset="100%" stop-color="#5C554C"/>'
+      : '<stop offset="0%" stop-color="#B8443C"/><stop offset="52%" stop-color="#9E2B25"/><stop offset="100%" stop-color="#701E1B"/>';
+    const label = cracked
+      ? 'Broken wax seal: this vault is claimable.'
+      : warning
+        ? 'Wax seal showing hairline cracks: the silence window is almost over.'
+        : 'Intact wax seal: checked in recently.';
+    const monogramFill = cracked ? '#4a463d' : '#87231D';
+    const monogram = `
+      <g transform="translate(61,64)">
+        <g transform="translate(-0.8,-0.8)" fill="#4A1512" opacity="0.5"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+        <g transform="translate(0.8,0.8)" fill="#C97B6F" opacity="0.4"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+        <g fill="${monogramFill}"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+      </g>`;
+    let cracks = '';
+    if (warning) {
+      cracks = '<path d="M84 34 L79 58 L92 74" stroke="#5A1815" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.6"/>';
+    } else if (cracked) {
+      cracks = `
+        <path d="M84 34 L79 58 L94 78 L86 118" stroke="#3f3b33" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <path d="M40 70 L70 76 M108 84 L134 66" stroke="#3f3b33" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+    }
     return `
-    <svg width="${size}" height="${size}" viewBox="0 0 84 84" role="img" aria-label="${cracked ? 'Broken wax seal' : 'Intact wax seal'}">
-      <g>
-        <circle cx="42" cy="42" r="30" fill="${fill}"/>
-        <circle cx="24" cy="28" r="9" fill="${fill}"/>
-        <circle cx="60" cy="26" r="8" fill="${fill}"/>
-        <circle cx="65" cy="52" r="9" fill="${fill}"/>
-        <circle cx="30" cy="63" r="8" fill="${fill}"/>
-        <circle cx="14" cy="48" r="6" fill="${fill}"/>
-        <circle cx="50" cy="68" r="6" fill="${fill}"/>
-        <circle cx="42" cy="42" r="22" fill="none" stroke="${inner}" stroke-width="1.5"/>
-        <text x="42" y="50" text-anchor="middle" font-family="Cormorant Garamond, serif" font-size="22" font-weight="600" fill="${cracked ? '#4a463d' : '#F0E7D6'}">LV</text>
-        ${cracks}
-      </g>
+    <svg width="${size}" height="${size}" viewBox="0 0 200 200" role="img" aria-label="${label}">
+      <defs><radialGradient id="${gradId}" cx="35%" cy="30%" r="78%">${stops}</radialGradient></defs>
+      <path fill="url(#${gradId})" d="${SEAL_BLOB_PATH}"/>
+      <circle cx="100" cy="99" r="55" fill="none" stroke="${cracked ? '#4a463d' : '#5A1815'}" stroke-width="1.6" stroke-dasharray="10 4 6 3 14 5 5 7 9 4" opacity="0.5"/>
+      ${monogram}
+      ${cracks}
     </svg>`;
+  }
+
+  function sealStateFor(claimable, secondsLeft, totalInterval) {
+    if (claimable) return 'cracked';
+    if (totalInterval && secondsLeft / totalInterval < 0.2) return 'warning';
+    return 'intact';
+  }
+
+  function updateSeal(containerId, stageId, state, lastStateRef) {
+    if (state === lastStateRef.value) return;
+    lastStateRef.value = state;
+    $(containerId).innerHTML = sealSVG(state);
+    const stage = $(stageId);
+    stage.classList.add('seal-changed');
+    setTimeout(() => stage.classList.remove('seal-changed'), 320);
   }
 
   // ---------- helpers ----------
@@ -596,6 +518,8 @@
   function setBusy(button, busy, busyLabel) {
     if (busy) {
       if (!button.dataset.originalLabel) button.dataset.originalLabel = button.textContent;
+      // pin the width before swapping content so nothing reflows
+      if (!button.style.minWidth) button.style.minWidth = button.offsetWidth + 'px';
       button.disabled = true;
       button.classList.add('is-busy');
       button.setAttribute('aria-busy', 'true');
@@ -605,6 +529,7 @@
       button.classList.remove('is-busy');
       button.removeAttribute('aria-busy');
       if (button.dataset.originalLabel) { button.textContent = button.dataset.originalLabel; delete button.dataset.originalLabel; }
+      button.style.minWidth = '';
     }
   }
 
@@ -693,25 +618,42 @@
     el.classList.toggle('over', bytes > max);
   }
 
-  // ---------- custom select ----------
+  // ---------- custom select: keyboard nav (arrows/enter/escape) + type-ahead ----------
   function initCustomSelect(wrapId, triggerId, listId, onSelect) {
     const wrap = $(wrapId), trigger = $(triggerId), list = $(listId);
     const options = Array.from(list.querySelectorAll('[role="option"]'));
+    let typeAhead = '', typeAheadTimer = null;
+
     function open() { list.hidden = false; wrap.dataset.open = 'true'; trigger.setAttribute('aria-expanded', 'true'); }
     function close() { list.hidden = true; wrap.dataset.open = 'false'; trigger.setAttribute('aria-expanded', 'false'); }
+    function select(opt) {
+      options.forEach(o => o.setAttribute('aria-selected', String(o === opt)));
+      onSelect(opt);
+    }
+    function jumpToTypeAhead(char) {
+      clearTimeout(typeAheadTimer);
+      typeAhead += char.toLowerCase();
+      typeAheadTimer = setTimeout(() => { typeAhead = ''; }, 600);
+      const match = options.find(o => o.textContent.trim().toLowerCase().startsWith(typeAhead));
+      if (match) match.focus();
+    }
+
     trigger.addEventListener('click', () => (list.hidden ? open() : close()));
     trigger.addEventListener('keydown', e => {
       if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); options[0]?.focus(); }
       else if (e.key === 'Escape') close();
     });
     options.forEach((opt, i) => {
-      opt.addEventListener('click', () => { onSelect(opt); close(); trigger.focus(); });
+      opt.addEventListener('click', () => { select(opt); close(); trigger.focus(); });
       opt.addEventListener('keydown', e => {
         if (e.key === 'Escape') { close(); trigger.focus(); }
         else if (e.key === 'ArrowDown') { e.preventDefault(); (options[i + 1] || options[0]).focus(); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); (options[i - 1] || options[options.length - 1]).focus(); }
-        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(opt); close(); trigger.focus(); }
+        else if (e.key === 'Home') { e.preventDefault(); options[0].focus(); }
+        else if (e.key === 'End') { e.preventDefault(); options[options.length - 1].focus(); }
+        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(opt); close(); trigger.focus(); }
         else if (e.key === 'Tab') close();
+        else if (e.key.length === 1 && /\S/.test(e.key)) { e.preventDefault(); jumpToTypeAhead(e.key); }
       });
     });
     document.addEventListener('click', e => {
@@ -780,7 +722,9 @@
       ownerDeadline = Number(v.lastCheckIn) + Number(v.checkInInterval);
       ownerTotalInterval = Number(v.checkInInterval);
       $('ownerUnlockAt').textContent = `Unlocks ${new Date(ownerDeadline * 1000).toLocaleString()}`;
-      $('ownerSeal').innerHTML = sealSVG(v.claimable);
+      const secondsLeft = ownerDeadline - Math.floor(Date.now() / 1000);
+      lastOwnerSealState = null; // force a render even if the state string repeats after a reconnect
+      updateSeal('ownerSeal', 'ownerSealStage', sealStateFor(v.claimable, secondsLeft, ownerTotalInterval), { get value() { return lastOwnerSealState; }, set value(s) { lastOwnerSealState = s; } });
     } catch {
       $('createDoc').style.display = 'block';
       $('vaultDoc').style.display = 'none';
@@ -963,7 +907,7 @@
       owners.forEach(o => {
         const li = document.createElement('li');
         const b = document.createElement('button');
-        b.className = 'quiet';
+        b.className = 'btn-quiet';
         b.textContent = 'Open vault of ' + short(o);
         b.addEventListener('click', () => loadClaimVault(o));
         li.appendChild(b);
@@ -986,7 +930,10 @@
       $('cBeneficiary').textContent = v.beneficiary;
       $('cLastCheckIn').textContent = fmtDate(v.lastCheckIn);
       $('claimUnlockAt').textContent = `Unlocks ${new Date(claimDeadline * 1000).toLocaleString()}`;
-      $('claimSeal').innerHTML = sealSVG(v.claimable);
+      const claimTotalInterval = Number(v.checkInInterval);
+      const claimSecondsLeft = claimDeadline - Math.floor(Date.now() / 1000);
+      lastClaimSealState = null;
+      updateSeal('claimSeal', 'claimSealStage', sealStateFor(v.claimable, claimSecondsLeft, claimTotalInterval), { get value() { return lastClaimSealState; }, set value(s) { lastClaimSealState = s; } });
       const letter = $('claimLetter');
       const msgBytes = ethers.getBytes(v.message);
       const encrypted = isEncrypted(msgBytes);
@@ -1060,13 +1007,15 @@
       const left = ownerDeadline - now;
       const el = $('ownerCountdown');
       el.textContent = fmtCountdown(left);
+      const warn = left > 0 && ownerTotalInterval && left / ownerTotalInterval < 0.2;
       el.classList.toggle('due', left <= 0);
-      el.classList.toggle('warn', left > 0 && ownerTotalInterval && left / ownerTotalInterval < 0.2);
+      el.classList.toggle('warn', warn);
       $('ownerCountLabel').textContent = left <= 0
         ? 'silence exceeded — your beneficiary may now claim'
-        : (ownerTotalInterval && left / ownerTotalInterval < 0.2)
+        : warn
           ? 'less than 20% of your silence window remains'
           : 'silence remaining before it unlocks';
+      updateSeal('ownerSeal', 'ownerSealStage', sealStateFor(left <= 0, left, ownerTotalInterval), { get value() { return lastOwnerSealState; }, set value(s) { lastOwnerSealState = s; } });
       if (left === 0) refreshOwnerVault();
     }
     if (claimDeadline !== null) {
@@ -1116,10 +1065,12 @@
   });
 
   // ---------- footer + initial state ----------
-  $('networkBadge').textContent = window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+  const networkBadgeEl = $('networkBadge');
+  networkBadgeEl.textContent = window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+  networkBadgeEl.setAttribute('aria-label', `Active network: ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}`);
   $('contractAddr').textContent = `contract: ${CONTRACT_ADDRESS}`;
   $('explorerLink').href = `${window.LEGACY_VAULT_CONFIG.EXPLORER_BASE}${CONTRACT_ADDRESS}`;
-  $('ownerSeal').innerHTML = sealSVG(false);
+  $('ownerSeal').innerHTML = sealSVG('intact');
   loadConstraints();
 </script>
 </body>

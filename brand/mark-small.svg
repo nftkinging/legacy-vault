@@ -1,0 +1,39 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Legacy Vault seal">
+  <defs>
+    <radialGradient id="waxBodySmall" cx="35%" cy="30%" r="78%">
+      <stop offset="0%" stop-color="#B8443C"/>
+      <stop offset="52%" stop-color="#9E2B25"/>
+      <stop offset="100%" stop-color="#701E1B"/>
+    </radialGradient>
+  </defs>
+
+  <path fill="url(#waxBodySmall)" d="
+    M100.00,26.00
+    C113.90,25.89 116.90,24.08 129.28,29.32
+    C141.65,34.57 142.33,38.08 151.97,48.03
+    C161.61,57.98 164.51,58.73 169.75,71.11
+    C175.00,83.48 174.55,86.47 174.00,100.00
+    C173.45,113.53 172.35,115.22 167.44,127.94
+    C162.54,140.65 159.56,142.92 153.39,153.39
+    C147.21,163.85 150.47,167.01 141.50,171.88
+    C132.53,176.75 125.58,173.46 115.70,173.85
+    C105.82,174.24 110.66,174.37 100.00,173.50
+    C89.34,172.63 83.21,175.42 70.92,170.21
+    C58.63,165.01 58.06,161.46 48.38,151.62
+    C38.70,141.78 35.58,141.18 30.25,128.89
+    C24.92,116.60 26.22,113.85 26.00,100.00
+    C25.78,86.15 23.99,83.01 29.32,70.72
+    C34.65,58.43 38.48,58.13 48.38,48.38
+    C58.28,38.63 58.63,35.11 70.92,29.79
+    C83.21,24.46 86.10,26.11 100.00,26.00
+    Z
+  "/>
+
+  <!-- Bolder, thicker-stroked monogram for legibility at favicon sizes: no
+       bevel, no ring, thicker strokes and a shallower V notch than mark.svg
+       so the shape reads as two solid forms rather than thin lines. -->
+  <g transform="translate(56,60)" fill="#F6ECDD">
+    <path d="M6,4 L22,4 L22,50 L50,50 L50,62 L6,62 Z"/>
+    <path d="M20,4 L48,58 L76,4 L64,4 L48,32 L32,4 Z"/>
+  </g>
+</svg>
