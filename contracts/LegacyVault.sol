@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.20;
 
 /// @title Legacy Vault — a dead man's switch on BOT Chain
 /// @notice Lock funds and a final message for a beneficiary. As long as you
@@ -180,9 +180,9 @@ contract LegacyVault {
         require(newBalance >= MIN_DEPOSIT, "Would drop below minimum - use closeVault() instead");
         v.balance = newBalance;
         v.lastCheckIn = block.timestamp;
+        emit Withdrawn(msg.sender, _amount, v.balance);
         (bool ok, ) = msg.sender.call{value: _amount}("");
         require(ok, "Transfer failed");
-        emit Withdrawn(msg.sender, _amount, v.balance);
     }
 
     /// @notice Close your vault and withdraw everything left in it, freeing
@@ -195,11 +195,11 @@ contract LegacyVault {
         address beneficiary = v.beneficiary;
         delete vaults[msg.sender];
         _unlink(beneficiary, msg.sender);
+        emit VaultClosed(msg.sender, amount);
         if (amount > 0) {
             (bool ok, ) = msg.sender.call{value: amount}("");
             require(ok, "Transfer failed");
         }
-        emit VaultClosed(msg.sender, amount);
     }
 
     /// @notice Beneficiary claims the vault of an owner who has gone silent.
@@ -217,13 +217,12 @@ contract LegacyVault {
 
         delete vaults[_owner];
         _unlink(beneficiary, _owner);
+        emit Claimed(_owner, beneficiary, amount);
 
         if (amount > 0) {
             (bool ok, ) = msg.sender.call{value: amount}("");
             require(ok, "Transfer failed");
         }
-
-        emit Claimed(_owner, beneficiary, amount);
     }
 
     /// @notice Publish (or rotate) your encryption public key so owners who

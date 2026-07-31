@@ -1,0 +1,15 @@
+[profile.default]
+src = "contracts"
+test = "test/foundry"
+out = "out-foundry"
+libs = ["lib"]
+cache_path = "cache-foundry"
+solc = "0.8.20"
+
+[fuzz]
+runs = 1000
+
+[invariant]
+runs = 256
+depth = 50
+fail_on_revert = false
