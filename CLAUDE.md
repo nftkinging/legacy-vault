@@ -77,3 +77,29 @@ can proceed.
   one bad entry cannot break the claim list.
 - Chain ID, RPC, explorer, and contract address should be config values, not hardcoded, so
   one build can target 968 or 677. Always show the active network in the UI.
+
+## Design-skill constraints (ui-ux-pro-max)
+
+`.claude/skills/ui-ux-pro-max` is available and may be used for UI work on this project, but
+scoped narrowly — this is a single-file vanilla-JS desktop-web dApp with an already-decided,
+locked aesthetic, not a greenfield product open to a design-system search.
+
+**Use it for:** the stack-agnostic quality checklist — accessibility (§1: contrast, focus
+rings, aria-labels, keyboard nav), touch/interaction sizing, forms & feedback, and the
+pre-delivery checklist. These apply regardless of visual style and are genuinely useful for
+`frontend/index.html`.
+
+**Do not use it for:** `--design-system`, `--domain style`, `--domain color`, or
+`--domain typography` searches. The aesthetic is already decided (see Conventions above:
+heirloom letter, wax seal, parchment, sealing-wax red, serif display type) — do not let the
+skill suggest or drift the product toward a different style, palette, or font pairing.
+
+**Does not apply here (App/mobile-scoped):** safe-area insets, haptics, bottom navigation,
+Dynamic Type, React Native/SwiftUI/Flutter stack guidance, and any other section the skill
+itself scopes to native App UI. This is a browser page with MetaMask, not a mobile app —
+skip those sections entirely rather than adapting them.
+
+**Icons stay as decided:** no emoji icons (already a house rule — no browser `prompt()`
+dialogs either), but also no default icon-library swap-in (Phosphor/Heroicons) without
+confirming it fits the wax-seal aesthetic first. The existing wax seal is a hand-built SVG
+(`sealSVG()` in `frontend/index.html`), not an icon-font glyph — keep it that way.
