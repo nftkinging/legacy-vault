@@ -34,6 +34,13 @@ window.LEGACY_VAULT_CONFIG = {
   // Both networks are always defined (not just the active one) so AppKit's
   // network switcher and wallet_addEthereumChain fallback both work no
   // matter which chain the dapp is currently pointed at.
+  // genesisHash is block 0's hash on each chain (eth_getBlockByNumber("0x0")),
+  // fetched directly from the RPCs below on 2026-07-31. Immutable and
+  // chain-specific, unlike the numeric chain ID — testnet 968 collides in
+  // the public chain registry with an unrelated chain (Datagram/DGRAM), so a
+  // wallet can report chain ID 968 while actually connected to the wrong
+  // network. Comparing eth_chainId alone would not catch that; comparing
+  // genesis hash does. See docs/LegacyVault_Mainnet_Plan.md Batch 5 item 7.
   NETWORKS: {
     testnet: {
       id: 968,
@@ -42,7 +49,8 @@ window.LEGACY_VAULT_CONFIG = {
       name: "BOT Chain Testnet",
       nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
       rpcUrls: ["https://rpc.bohr.life"],
-      explorerUrl: "https://scan.bohr.life"
+      explorerUrl: "https://scan.bohr.life",
+      genesisHash: "0x395bd3d6583216495648e8322032761c1a377eddf04f59de0c693c7d6682aee6"
     },
     mainnet: {
       id: 677,
@@ -51,7 +59,8 @@ window.LEGACY_VAULT_CONFIG = {
       name: "BOT Chain",
       nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
       rpcUrls: ["https://rpc.botchain.ai"],
-      explorerUrl: "https://scan.botchain.ai"
+      explorerUrl: "https://scan.botchain.ai",
+      genesisHash: "0x161a4ff8b4c95e95b314899c4ea8f9782c4ae8851362ffe0d47c0b8a05f7b784"
     }
   }
 };

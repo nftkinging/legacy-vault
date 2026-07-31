@@ -169,6 +169,51 @@ accepted in writing with a rationale.
    network, but the beneficiary persona should not be expected to hit that error at all —
    if a target wallet fails here, either drop it from recommended wallets or find a
    workaround before mainnet.
+7. **Chain ID registry findings (2026-07-31):**
+   - Mainnet 677 is correctly registered to BOT Chain in the public chain registry
+     (chainlist-style lookups return BOT Chain's own name/RPC/symbol). Not a launch
+     blocker.
+   - Testnet 968 collides with Datagram (DGRAM), which holds that registry entry.
+     Wallets that resolve unrecognized `wallet_addEthereumChain` requests against the
+     public registry will show Datagram's name/RPC/symbol when prompting a user to add
+     chain 968, even though our `wallet_addEthereumChain` payload carries BOT Chain's own
+     params. This is BOT Chain's ID collision, not something fixable from this app's
+     code. Batch 5 mobile testing happens on 968 — expect this friction during testing
+     and don't misread wallet-shown Datagram branding as an app bug. The app-side guard
+     added in Batch 4.1 (`verifyGenuineBotChain()` in `app.html` — compares the connected
+     RPC's genesis block hash, fixed at chain creation and immune to the ID collision,
+     against the known BOT Chain genesis hash for the active network) means the app
+     itself will never silently treat a Datagram-resolved connection as BOT Chain,
+     regardless of what the wallet's add-chain prompt displays. Checking `eth_chainId`
+     alone would not have caught this — a wallet reporting the right numeric ID is not
+     proof it's talking to the right RPC.
+8. **Mobile WalletConnect debugging (2026-07-31):** investigated the report that
+   WalletConnect "only works inside MetaMask's in-app browser." Root cause is not a
+   single bug:
+   - Opening the page inside MetaMask's in-app browser succeeds because MetaMask
+     injects `window.ethereum` there — that's the EIP-6963/injected-provider path from
+     Batch 4, not WalletConnect at all. WalletConnect isn't involved in that success case.
+   - The actual WalletConnect path (tapping "WalletConnect" in the picker with no
+     injected provider) is subject to a known, still-open ecosystem-wide limitation:
+     generating a WalletConnect pairing session is asynchronous, but mobile browsers
+     (especially Safari) only allow a wallet-app deep link/redirect to fire synchronously
+     within the original click's user-gesture window. By the time AppKit's pairing URI is
+     ready, that window has often closed, so the deep link silently does nothing. This is
+     documented and still unresolved upstream — see reown-com/appkit issues #3954, #4785,
+     #4788 and WalletConnect/walletconnect-monorepo#4610 — not something fixable from
+     this app's integration code.
+   - Found and fixed a real bug on our side while investigating: closing the AppKit modal
+     without completing a connection (back button, tapping outside, or the deep link
+     silently failing per the point above) left the connect button stuck on "Connecting…"
+     forever, with no way to retry short of reloading the page — confirmed via
+     `subscribeState`, which fires `{open: false}` on any close, success or not. Fixed by
+     resetting to a clean, retryable state on modal close (`__onWalletConnectModalClosed`
+     in `app.html`) — verified via Playwright.
+   - Net effect: the "Open in MetaMask" direct deep link (Batch 4, still in the picker)
+     remains the more reliable mobile path today, since it's a synchronous, static
+     navigation not subject to the async-pairing timing problem. Batch 5 mobile testing
+     should treat WalletConnect-in-plain-mobile-browser as best-effort, and lean on the
+     direct deep link and in-app-browser paths as the ones expected to work reliably.
 
 **Exit criterion:** clean end-to-end runs, no critical feedback outstanding.
 

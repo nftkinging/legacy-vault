@@ -436,6 +436,19 @@
       }
     });
 
+    // Without this, backing out of the modal (or a deep link that silently
+    // never opens a wallet — a real, currently-unresolved gap in mobile
+    // WalletConnect flows generally, not something this app's code can fix)
+    // leaves the connect button stuck on "Connecting…" forever, since only
+    // a *successful* connection ever cleared that state. `open` flips false
+    // both on a normal close and after connecting, so this only needs to
+    // act while a connection attempt is still pending.
+    appKit.subscribeState(state => {
+      if (!state.open && typeof window.__onWalletConnectModalClosed === 'function') {
+        window.__onWalletConnectModalClosed();
+      }
+    });
+
     window.__legacyVaultAppKit = appKit;
     window.dispatchEvent(new Event('legacyvault:appkit-ready'));
   } catch (err) {
@@ -653,6 +666,9 @@
     ];
     if (err && err.walletConnectChainUnsupported) {
       return `This wallet couldn't add ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} over WalletConnect — some mobile wallets only support a fixed chain list. Try a browser wallet extension instead, or check that your wallet app supports adding custom networks.`;
+    }
+    if (err && err.wrongChainRpc) {
+      return `Your wallet connected to a different network than ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} — this chain ID is shared with another, unrelated chain in some wallets' network lists. Remove and re-add ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} manually using the RPC shown in this app's footer, then reconnect.`;
     }
     for (const [re, msg] of rules) if (re.test(raw)) return msg();
     return raw || 'Something went wrong. Please try again.';
@@ -896,6 +912,17 @@
     window.__legacyVaultAppKit.open();
   }
 
+  // The modal closing (back button, tapping outside, or a deep link that
+  // never actually opened a wallet app) is not itself an error — just an
+  // abandoned attempt. Reset to a clean, retryable state instead of leaving
+  // "Connecting…" on screen forever.
+  window.__onWalletConnectModalClosed = () => {
+    if (!walletConnectPending) return;
+    walletConnectPending = false;
+    setBusy($('connectBtn'), false);
+    note($('createMsg'), 'WalletConnect was closed before connecting — tap Connect wallet to try again.', '');
+  };
+
   // AppKit's subscribeProviders fires whenever its internal provider state
   // changes; `walletConnectPending` keeps this from re-running the connect
   // flow on unrelated state changes (e.g. after the user later disconnects).
@@ -904,6 +931,27 @@
     walletConnectPending = false;
     await connectWithProvider(eip155Provider, { viaWalletConnect: true });
   };
+
+  // Testnet chain ID 968 collides with an unrelated chain (Datagram) in the
+  // public chain registry — see docs/LegacyVault_Mainnet_Plan.md Batch 5
+  // item 7. A wallet reporting the right eth_chainId is not proof it's
+  // actually talking to BOT Chain's RPC, so we check the one thing that
+  // can't collide: the genesis block hash, fixed at chain creation and
+  // unique to each chain's actual history.
+  function getActiveNetworkConfig() {
+    const { NETWORKS, CHAIN_ID_HEX } = window.LEGACY_VAULT_CONFIG;
+    return CHAIN_ID_HEX === NETWORKS.mainnet.chainIdHex ? NETWORKS.mainnet : NETWORKS.testnet;
+  }
+
+  async function verifyGenuineBotChain(prov) {
+    const expected = getActiveNetworkConfig().genesisHash;
+    const genesis = await prov.send('eth_getBlockByNumber', ['0x0', false]);
+    if (!genesis || String(genesis.hash).toLowerCase() !== expected.toLowerCase()) {
+      const err = new Error('Connected RPC does not match BOT Chain’s genesis block.');
+      err.wrongChainRpc = true;
+      throw err;
+    }
+  }
 
   async function connectWithProvider(eth, opts = {}) {
     setBusy($('connectBtn'), true, 'Connecting…');
@@ -915,6 +963,7 @@
         await ensureNetwork(eth);
       }
       provider = new ethers.BrowserProvider(eth);
+      await verifyGenuineBotChain(provider);
       signer = await provider.getSigner();
       myAddress = await signer.getAddress();
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
