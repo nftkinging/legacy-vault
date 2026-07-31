@@ -12,5 +12,10 @@ window.LEGACY_VAULT_CONFIG = {
     blockExplorerUrls: ["https://scan.bohr.life/"]
   },
   EXPLORER_BASE: "https://scan.bohr.life/address/",
-  AUDIT_REPORT_URL: "https://github.com/nftkinging/legacy-vault/blob/main/docs/LegacyVault_Security_Review.md"
+  EXPLORER_TX_BASE: "https://scan.bohr.life/tx/",
+  // The security review is an informal review, not a real audit — leave this
+  // empty (hides the footer link) until there's an actual audit to point at.
+  AUDIT_REPORT_URL: "",
+  DOCS_URL: "", // fill in when docs are published; hidden in the footer until then
+  X_URL: ""     // fill in once the account exists; hidden in the footer until then
 };

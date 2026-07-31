@@ -8,24 +8,25 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --paper: #EDE4CF;
-    --paper-deep: #E2D6B9;
-    --ink: #20291F;
-    --ink-soft: #5C6353;
-    --seal: #7E2B24;
-    --seal-dark: #5C1F1A;
-    --gilt: #8C6F3F;
+    --paper: #F0E7D6;
+    --paper-deep: #E4D8BE;
+    --ink: #241318;
+    --ink-soft: #6E5A52;
+    --seal: #9E2B25;
+    --seal-dark: #74201C;
+    --gilt: #C39B4A;
     --ok: #4C6B3C;
     --serif: 'Cormorant Garamond', Georgia, serif;
     --mono: 'IBM Plex Mono', monospace;
+    --transition: 200ms ease;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
     background: var(--paper);
     background-image:
-      radial-gradient(ellipse at 50% -10%, rgba(140,111,63,0.14), transparent 55%),
-      radial-gradient(ellipse at 90% 110%, rgba(126,43,36,0.06), transparent 50%);
+      radial-gradient(ellipse at 50% -10%, rgba(195,155,74,0.14), transparent 55%),
+      radial-gradient(ellipse at 90% 110%, rgba(158,43,37,0.06), transparent 50%);
     color: var(--ink);
     font-family: var(--serif);
     font-size: 18px;
@@ -43,6 +44,7 @@
     font-size: 52px; font-weight: 600; text-align: center;
     margin: 0 0 6px; letter-spacing: 0.01em;
   }
+  h1 a { color: inherit; text-decoration: none; }
   .tagline {
     text-align: center; font-style: italic; color: var(--ink-soft);
     margin: 0 auto 8px; max-width: 46ch; font-size: 20px;
@@ -71,15 +73,31 @@
     background: var(--ink); color: var(--paper);
     border: 1px solid var(--ink);
     padding: 11px 20px; border-radius: 2px;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background var(--transition), color var(--transition), border-color var(--transition), opacity var(--transition);
   }
-  button:hover { background: transparent; color: var(--ink); }
+  button:hover:not(:disabled) { background: transparent; color: var(--ink); }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
-  button.seal-btn { background: var(--seal); border-color: var(--seal); }
-  button.seal-btn:hover { background: transparent; color: var(--seal); }
+  button.is-busy { opacity: 0.85; cursor: wait; }
+  button.seal-btn { background: var(--seal); border-color: var(--seal); color: var(--paper); }
+  button.seal-btn:hover:not(:disabled) { background: transparent; color: var(--seal); }
   button.quiet { background: transparent; color: var(--ink-soft); border-color: var(--ink-soft); }
-  button.quiet:hover { color: var(--ink); border-color: var(--ink); }
-  button:focus-visible, input:focus, textarea:focus, select:focus { outline: 2px solid var(--seal); outline-offset: 2px; }
+  button.quiet:hover:not(:disabled) { color: var(--ink); border-color: var(--ink); }
+  button.danger { background: transparent; color: var(--seal); border-color: var(--seal); }
+  button.danger:hover:not(:disabled) { background: var(--seal); color: var(--paper); }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, .cselect-trigger:focus-visible {
+    outline: 2px solid var(--seal); outline-offset: 2px;
+  }
+
+  /* ---------- spinner (loading state) ---------- */
+  .spinner {
+    display: inline-block; width: 10px; height: 10px; margin-right: 8px;
+    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+    animation: spin 0.7s linear infinite; vertical-align: -1px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; opacity: 0.7; }
+  }
 
   /* ---------- tabs ---------- */
   .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: 30px; }
@@ -89,7 +107,7 @@
     padding: 6px 22px; text-transform: none; letter-spacing: 0;
     border-bottom: 1px solid transparent;
   }
-  .tab:hover { background: none; color: var(--ink); }
+  .tab:hover:not(:disabled) { background: none; color: var(--ink); }
   .tab.active { color: var(--ink); border-bottom: 1px solid var(--seal); font-weight: 600; }
 
   /* ---------- the document card ---------- */
@@ -117,12 +135,63 @@
     border: 1px solid var(--ink-soft); border-radius: 2px;
     font-family: var(--mono); font-size: 14px; color: var(--ink);
     padding: 10px 12px;
+    transition: border-color var(--transition), background var(--transition);
   }
+  input:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus) { border-color: var(--ink); }
+  input:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; background: rgba(0,0,0,0.03); }
+  input.has-error, textarea.has-error, .cselect-trigger.has-error { border-color: var(--seal); }
   textarea { font-family: var(--serif); font-size: 18px; min-height: 110px; resize: vertical; }
   .inline { display: flex; gap: 10px; }
   .inline > * { flex: 1; }
+  .inline > button { flex: 0 0 auto; }
+
+  .field-hint {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+    margin-top: 6px; line-height: 1.5;
+  }
+  .field-error-text {
+    font-family: var(--mono); font-size: 11.5px; color: var(--seal);
+    margin-top: 6px; line-height: 1.5;
+  }
+  .char-counter { text-align: right; }
+  .char-counter.over { color: var(--seal); }
 
   .actions { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+
+  /* ---------- custom select (interval quick-pick) ---------- */
+  .interval-control { display: flex; gap: 10px; align-items: stretch; }
+  /* flex-basis:0 (not auto) so grow ratio alone decides width — otherwise
+     the input's `width:100%` (from the generic input rule) becomes its
+     flex-basis and claims nearly all the row before any space-sharing. */
+  .interval-control input#intervalDays { flex: 1 1 0; min-width: 0; }
+  .cselect { position: relative; flex: 1 1 0; min-width: 0; }
+  .cselect-trigger {
+    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: rgba(255,255,255,0.4); border: 1px solid var(--ink-soft); border-radius: 2px;
+    font-family: var(--mono); font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
+    color: var(--ink); padding: 10px 12px; cursor: pointer;
+  }
+  .cselect-trigger span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cselect-trigger:hover:not(:disabled) { border-color: var(--ink); background: rgba(255,255,255,0.4); color: var(--ink); }
+  .cselect-chevron { flex-shrink: 0; color: var(--ink-soft); transition: transform var(--transition); }
+  .cselect[data-open="true"] .cselect-chevron { transform: rotate(180deg); }
+  .cselect-list {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    background: var(--paper); border: 1px solid var(--ink-soft); border-radius: 2px;
+    list-style: none; margin: 0; padding: 4px; max-height: 240px; overflow-y: auto;
+    box-shadow: 0 10px 28px rgba(36,19,24,0.22);
+  }
+  .cselect-list[hidden] { display: none; }
+  .cselect-list li {
+    font-family: var(--mono); font-size: 13px; padding: 9px 10px; cursor: pointer;
+    border-radius: 2px; color: var(--ink);
+  }
+  .cselect-list li:hover, .cselect-list li:focus { background: rgba(195,155,74,0.22); outline: none; }
+  .cselect-list li:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
+
+  /* ---------- inline forms (replace prompt() dialogs) ---------- */
+  .inline-form { margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--paper-deep); }
+  .inline-form[hidden] { display: none; }
 
   /* ---------- vault status ---------- */
   .seal-stage { display: flex; flex-direction: column; align-items: center; margin: 6px 0 18px; }
@@ -131,9 +200,13 @@
     letter-spacing: 0.04em; margin-top: 10px; font-variant-numeric: tabular-nums;
   }
   .countdown.due { color: var(--seal); }
+  .countdown.warn { color: var(--seal-dark); }
   .count-label {
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.26em;
     text-transform: uppercase; color: var(--ink-soft); margin-top: 2px;
+  }
+  .unlock-datetime {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-soft); margin-top: 4px;
   }
   .facts {
     margin: 22px 0 0; padding: 0; list-style: none;
@@ -166,20 +239,37 @@
   .msg-line { font-family: var(--mono); font-size: 12.5px; margin-top: 16px; text-align: center; min-height: 18px; }
   .msg-line.err { color: var(--seal); }
   .msg-line.ok { color: var(--ok); }
+  .tx-link {
+    display: none; font-family: var(--mono); font-size: 11.5px; text-align: center;
+    margin-top: 6px; color: var(--gilt); text-decoration: underline; text-underline-offset: 2px;
+  }
+
+  .empty-state {
+    font-family: var(--serif); font-style: italic; color: var(--ink-soft);
+    text-align: center; padding: 20px 10px; font-size: 16.5px; line-height: 1.6;
+  }
 
   .beneficiary-list { list-style: none; margin: 10px 0 0; padding: 0; }
   .beneficiary-list button { width: 100%; margin-bottom: 8px; text-transform: none; letter-spacing: 0.03em; }
 
-  footer {
-    text-align: center; font-family: var(--mono); font-size: 11px;
-    color: var(--ink-soft); letter-spacing: 0.06em; margin-top: 44px;
+  .network-badge {
+    display: inline-block; border: 1px solid var(--gilt); color: var(--gilt);
+    border-radius: 2px; padding: 2px 8px; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: 0.08em; text-transform: uppercase;
   }
-  footer a { color: var(--gilt); }
+  footer {
+    display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-soft); letter-spacing: 0.04em;
+    margin-top: 44px; border-top: 1px solid var(--paper-deep); padding-top: 18px;
+  }
+  footer a { color: var(--gilt); text-decoration: underline; text-underline-offset: 2px; }
+  footer a:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
 
   @media (max-width: 520px) {
     h1 { font-size: 38px; }
     .doc { padding: 26px 18px; }
     .countdown { font-size: 34px; }
+    .interval-control { flex-direction: column; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
@@ -190,7 +280,7 @@
 <div class="wrap">
 
   <div class="eyebrow">Recorded on BOT Chain &middot; No custodian &middot; No executor</div>
-  <h1><a href="index.html" style="color:inherit; text-decoration:none;">Legacy Vault</a></h1>
+  <h1><a href="index.html">Legacy Vault</a></h1>
   <p class="tagline">A letter, and what you leave with it, that opens only if you stop answering.</p>
   <hr class="rule" />
 
@@ -213,26 +303,43 @@
 
       <label for="benInput">Beneficiary address</label>
       <input id="benInput" placeholder="0x..." autocomplete="off" />
+      <div class="field-error-text" id="benError" hidden></div>
 
       <label for="amtInput">BOT to lock away</label>
-      <input id="amtInput" type="number" min="0" step="0.001" placeholder="0.05" />
+      <input id="amtInput" type="number" min="0" step="0.001" placeholder="0.1" />
+      <div class="field-hint" id="amtHint">Minimum 0.1 BOT.</div>
+      <div class="field-error-text" id="amtError" hidden></div>
 
       <label>Silence allowed before it unlocks</label>
-      <div class="inline">
-        <input id="intervalNum" type="number" min="1" step="1" value="5" />
-        <select id="intervalUnit">
-          <option value="60">minutes</option>
-          <option value="3600">hours</option>
-          <option value="86400">days</option>
-        </select>
+      <div class="interval-control">
+        <input id="intervalDays" type="number" min="1" max="3650" step="1" value="30" aria-label="Days of silence" />
+        <div class="cselect" id="presetSelect">
+          <button type="button" class="cselect-trigger" id="presetTrigger" aria-haspopup="listbox" aria-expanded="false">
+            <span id="presetLabel">Presets</span>
+            <svg class="cselect-chevron" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
+              <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <ul class="cselect-list" id="presetList" role="listbox" hidden>
+            <li role="option" tabindex="-1" data-days="7">1 week</li>
+            <li role="option" tabindex="-1" data-days="30">1 month</li>
+            <li role="option" tabindex="-1" data-days="90">3 months</li>
+            <li role="option" tabindex="-1" data-days="180">6 months</li>
+            <li role="option" tabindex="-1" data-days="365">1 year</li>
+            <li role="option" tabindex="-1" data-days="1825">5 years</li>
+          </ul>
+        </div>
       </div>
+      <div class="field-hint" id="intervalHint">Between 1 and 3650 days.</div>
+      <div class="field-error-text" id="intervalError" hidden></div>
 
       <label for="msgInput">The letter</label>
       <textarea id="msgInput" placeholder="If you are reading this, I have gone quiet..."></textarea>
+      <div class="field-hint char-counter" id="msgCounter">0 / 4096 bytes once encrypted</div>
 
       <label for="passInput">Seal passphrase</label>
       <input id="passInput" type="password" placeholder="a phrase only your beneficiary will know" autocomplete="off" />
-      <div class="count-label" style="text-align:left; margin-top:6px;">
+      <div class="field-hint">
         Encrypted client-side before it ever reaches the chain. Share this passphrase with your beneficiary some other way — lose it and the letter is lost, even though the funds remain claimable.
       </div>
 
@@ -240,6 +347,7 @@
         <button class="seal-btn" id="createBtn" disabled>Seal the vault</button>
       </div>
       <div class="msg-line" id="createMsg"></div>
+      <a class="tx-link" id="createTxLink" target="_blank" rel="noopener"></a>
     </div>
 
     <div class="doc" id="vaultDoc" style="display:none;">
@@ -249,6 +357,7 @@
         <div id="ownerSeal"></div>
         <div class="countdown" id="ownerCountdown">—</div>
         <div class="count-label" id="ownerCountLabel">silence remaining before it unlocks</div>
+        <div class="unlock-datetime" id="ownerUnlockAt"></div>
       </div>
 
       <ul class="facts">
@@ -260,10 +369,41 @@
 
       <div class="actions">
         <button class="seal-btn" id="checkInBtn">I'm still here</button>
-        <button id="depositBtn">Add funds</button>
-        <button class="quiet" id="withdrawBtn">Withdraw</button>
+        <button id="depositToggleBtn">Add funds</button>
+        <button class="quiet" id="withdrawToggleBtn">Withdraw</button>
+        <button class="danger" id="closeToggleBtn">Close vault</button>
       </div>
       <div class="msg-line" id="ownerMsg"></div>
+      <a class="tx-link" id="ownerTxLink" target="_blank" rel="noopener"></a>
+
+      <div class="inline-form" id="depositForm" hidden>
+        <label for="depositAmt">BOT to add</label>
+        <div class="inline">
+          <input id="depositAmt" type="number" min="0" step="0.001" placeholder="0.05" />
+          <button class="seal-btn" id="depositConfirm">Add</button>
+          <button class="quiet" id="depositCancel">Cancel</button>
+        </div>
+        <div class="field-error-text" id="depositError" hidden></div>
+      </div>
+
+      <div class="inline-form" id="withdrawForm" hidden>
+        <label for="withdrawAmt">BOT to withdraw</label>
+        <div class="inline">
+          <input id="withdrawAmt" type="number" min="0" step="0.001" placeholder="0.05" />
+          <button class="seal-btn" id="withdrawConfirm">Withdraw</button>
+          <button class="quiet" id="withdrawCancel">Cancel</button>
+        </div>
+        <div class="field-hint" id="withdrawHint">A live vault can't drop below the 0.1 BOT minimum — use Close vault to take everything out.</div>
+        <div class="field-error-text" id="withdrawError" hidden></div>
+      </div>
+
+      <div class="inline-form" id="closeForm" hidden>
+        <p class="field-hint">This pays out the full remaining balance and permanently closes the vault. You'd need to create a new vault to use this address again.</p>
+        <div class="actions">
+          <button class="danger" id="closeConfirm">Yes, close it</button>
+          <button class="quiet" id="closeCancel">Cancel</button>
+        </div>
+      </div>
     </div>
 
   </section>
@@ -276,6 +416,7 @@
       <div class="actions" style="margin-top:0;">
         <button id="findBtn" disabled>Find vaults naming me</button>
       </div>
+      <p class="empty-state" id="claimEmptyState">Connect your wallet, then search to see any vaults that name your address.</p>
       <ul class="beneficiary-list" id="ownerList"></ul>
 
       <label for="ownerLookup">Or look up a vault by its owner's address</label>
@@ -289,6 +430,7 @@
           <div id="claimSeal"></div>
           <div class="countdown" id="claimCountdown">—</div>
           <div class="count-label" id="claimCountLabel">until the seal may be broken</div>
+          <div class="unlock-datetime" id="claimUnlockAt"></div>
         </div>
 
         <ul class="facts">
@@ -302,9 +444,11 @@
           <div class="sealed-note" id="sealedNote" style="display:none;">Still sealed</div>
         </div>
 
-        <div class="inline actions" id="decryptRow" style="display:none;">
-          <input id="passphraseInput" type="password" placeholder="Enter the passphrase to reveal" autocomplete="off" />
-          <button class="quiet" id="revealBtn" style="flex:0;">Reveal</button>
+        <div class="inline-form" id="decryptRow" style="display:none; border-top:none; margin-top:16px; padding-top:0;">
+          <div class="inline">
+            <input id="passphraseInput" type="password" placeholder="Enter the passphrase to reveal" autocomplete="off" />
+            <button class="quiet" id="revealBtn">Reveal</button>
+          </div>
         </div>
 
         <div class="actions">
@@ -312,11 +456,13 @@
         </div>
       </div>
       <div class="msg-line" id="claimMsg"></div>
+      <a class="tx-link" id="claimTxLink" target="_blank" rel="noopener"></a>
     </div>
   </section>
 
   <footer>
-    LegacyVault.sol on BOT Chain testnet (chain 968) &middot;
+    <span class="network-badge" id="networkBadge">BOT Chain Testnet</span>
+    <span id="contractAddr">contract: —</span>
     <a id="explorerLink" href="#" target="_blank" rel="noopener">view contract on explorer</a>
   </footer>
 
@@ -329,24 +475,72 @@
   const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const CHAIN_ID_HEX = window.LEGACY_VAULT_CONFIG.CHAIN_ID_HEX;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
+
+  // ABI matches the hardened contract (contracts/LegacyVault.sol) — `message`
+  // is `bytes`, not `string`, and MIN_INTERVAL/MAX_INTERVAL/MIN_DEPOSIT/
+  // MAX_MESSAGE_LENGTH are read live from the contract below rather than
+  // hardcoded here, specifically so this file can't drift out of sync with
+  // the deployed constants again.
   const ABI = [
-    "function createVault(address _beneficiary, uint256 _checkInInterval, string _message) external payable",
+    "function createVault(address _beneficiary, uint256 _checkInInterval, bytes _message) external payable",
     "function checkIn() external",
     "function deposit() external payable",
-    "function updateMessage(string _message) external",
+    "function updateMessage(bytes _message) external",
+    "function updateBeneficiary(address _newBeneficiary) external",
     "function withdraw(uint256 _amount) external",
+    "function closeVault() external",
     "function claim(address _owner) external",
-    "function getVault(address _owner) external view returns (address beneficiary, uint256 balance, uint256 checkInInterval, uint256 lastCheckIn, string message, bool claimable)",
+    "function registerAsBeneficiary(bytes _pubKey) external",
+    "function getVault(address _owner) external view returns (address beneficiary, uint256 balance, uint256 checkInInterval, uint256 lastCheckIn, bytes message, bool claimable)",
     "function timeUntilClaimable(address _owner) external view returns (uint256)",
-    "function vaultsLeftFor(address _beneficiary) external view returns (address[])"
+    "function vaultsLeftFor(address _beneficiary) external view returns (address[])",
+    "function beneficiaryKeyCount(address _beneficiary) external view returns (uint256)",
+    "function currentBeneficiaryKey(address _beneficiary) external view returns (bytes key, uint256 version)",
+    "function MIN_INTERVAL() external view returns (uint256)",
+    "function MAX_INTERVAL() external view returns (uint256)",
+    "function MIN_DEPOSIT() external view returns (uint256)",
+    "function MAX_MESSAGE_LENGTH() external view returns (uint256)"
   ];
   // -------------------------------------------
 
-  document.getElementById('explorerLink').href = `${window.LEGACY_VAULT_CONFIG.EXPLORER_BASE}${CONTRACT_ADDRESS}`;
-
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
-  let ownerDeadline = null, claimDeadline = null, claimTargetOwner = null, claimCiphertext = null;
+  let ownerDeadline = null, ownerTotalInterval = null, claimDeadline = null, claimTargetOwner = null, claimCiphertext = null;
+
+  // Fallback constants match contracts/LegacyVault.sol exactly, used only if
+  // the live read (below) fails — e.g. wrong network, RPC hiccup. Real
+  // validation always prefers the live values once fetched.
+  const constraints = {
+    minInterval: 1n * 86400n, maxInterval: 3650n * 86400n,
+    minDeposit: ethers.parseEther('0.1'), maxMessageLength: 4096n,
+    live: false
+  };
+
+  function fmtDays(seconds) { return (Number(seconds) / 86400).toString(); }
+
+  async function loadConstraints() {
+    try {
+      const rc = getReadContract();
+      const [minI, maxI, minD, maxLen] = await Promise.all([
+        rc.MIN_INTERVAL(), rc.MAX_INTERVAL(), rc.MIN_DEPOSIT(), rc.MAX_MESSAGE_LENGTH()
+      ]);
+      constraints.minInterval = minI; constraints.maxInterval = maxI;
+      constraints.minDeposit = minD; constraints.maxMessageLength = maxLen;
+      constraints.live = true;
+    } catch (err) {
+      console.warn('Could not read live contract constants, using fallback values.', err);
+    }
+    // reflect into the UI regardless of whether the read succeeded
+    const minDays = fmtDays(constraints.minInterval), maxDays = fmtDays(constraints.maxInterval);
+    $('intervalDays').min = minDays; $('intervalDays').max = maxDays;
+    $('intervalHint').textContent = `Between ${minDays} and ${maxDays} days.`;
+    const minDepositStr = ethers.formatEther(constraints.minDeposit);
+    $('amtInput').min = minDepositStr;
+    $('amtInput').placeholder = minDepositStr;
+    $('amtHint').textContent = `Minimum ${minDepositStr} BOT.`;
+    $('withdrawHint').textContent = `A live vault can't drop below the ${minDepositStr} BOT minimum — use Close vault to take everything out.`;
+    updateMsgCounter();
+  }
 
   // ---------- wax seal SVG ----------
   function sealSVG(cracked, size = 84) {
@@ -366,7 +560,7 @@
         <circle cx="14" cy="48" r="6" fill="${fill}"/>
         <circle cx="50" cy="68" r="6" fill="${fill}"/>
         <circle cx="42" cy="42" r="22" fill="none" stroke="${inner}" stroke-width="1.5"/>
-        <text x="42" y="50" text-anchor="middle" font-family="Cormorant Garamond, serif" font-size="22" font-weight="600" fill="${cracked ? '#4a463d' : '#EDE4CF'}">LV</text>
+        <text x="42" y="50" text-anchor="middle" font-family="Cormorant Garamond, serif" font-size="22" font-weight="600" fill="${cracked ? '#4a463d' : '#F0E7D6'}">LV</text>
         ${cracks}
       </g>
     </svg>`;
@@ -392,22 +586,71 @@
     return (d > 0 ? d + 'd ' : '') + `${h}:${m}:${sec}`;
   }
   function note(el, text, cls) { el.textContent = text; el.className = 'msg-line' + (cls ? ' ' + cls : ''); }
+  function fieldError(el, text) {
+    if (!text) { el.hidden = true; el.textContent = ''; return; }
+    el.hidden = false; el.textContent = text;
+  }
+  function setInputError(input, hasError) { input.classList.toggle('has-error', !!hasError); }
 
-  // ---------- letter encryption (AES-GCM + PBKDF2) ----------
-  const ENC_PREFIX = 'enc:v1:';
+  // ---------- loading state helper ----------
+  function setBusy(button, busy, busyLabel) {
+    if (busy) {
+      if (!button.dataset.originalLabel) button.dataset.originalLabel = button.textContent;
+      button.disabled = true;
+      button.classList.add('is-busy');
+      button.setAttribute('aria-busy', 'true');
+      button.innerHTML = `<span class="spinner" aria-hidden="true"></span>${busyLabel || 'Working…'}`;
+    } else {
+      button.disabled = false;
+      button.classList.remove('is-busy');
+      button.removeAttribute('aria-busy');
+      if (button.dataset.originalLabel) { button.textContent = button.dataset.originalLabel; delete button.dataset.originalLabel; }
+    }
+  }
+
+  // ---------- tx feedback (explorer link) ----------
+  function txUrl(hash) { return `${window.LEGACY_VAULT_CONFIG.EXPLORER_TX_BASE}${hash}`; }
+  function showTxLink(linkEl, hash) {
+    linkEl.href = txUrl(hash);
+    linkEl.textContent = 'View transaction on explorer →';
+    linkEl.style.display = 'inline-block';
+  }
+  function hideTxLink(linkEl) { linkEl.style.display = 'none'; }
+
+  // ---------- friendly error messages ----------
+  function friendlyError(err) {
+    const raw = err && (err.reason || err.shortMessage || err.message) || '';
+    const rules = [
+      [/Deposit below minimum/i, () => `The minimum lock is ${ethers.formatEther(constraints.minDeposit)} BOT.`],
+      [/Interval out of range/i, () => `Choose a silence interval between ${fmtDays(constraints.minInterval)} and ${fmtDays(constraints.maxInterval)} days.`],
+      [/Would drop below minimum/i, () => `That would leave less than the ${ethers.formatEther(constraints.minDeposit)} BOT minimum in the vault. Use "Close vault" to take everything out instead.`],
+      [/Message too long/i, () => `That letter is too long once encrypted — try trimming it.`],
+      [/Vault already exists/i, () => `This address already has a vault. Refresh the page to see it.`],
+      [/Beneficiary must be someone else/i, () => `You can't name yourself as the beneficiary.`],
+      [/Beneficiary required/i, () => `Enter a beneficiary address.`],
+      [/Not the beneficiary/i, () => `Only the address named as beneficiary can claim this vault.`],
+      [/Owner is still checking in/i, () => `The owner has checked in recently — this vault isn't claimable yet.`],
+      [/No such vault/i, () => `No vault found at that address.`],
+      [/No vault for this address/i, () => `Connect the wallet that owns this vault.`],
+      [/Invalid amount/i, () => `Enter an amount greater than zero and no more than your locked balance.`],
+      [/Nothing to claim|Nothing sent/i, () => `Enter an amount greater than zero.`],
+      [/user rejected|ACTION_REJECTED/i, () => `Cancelled — nothing was sent.`],
+      [/insufficient funds/i, () => `Not enough BOT in your wallet to cover this, including gas.`],
+    ];
+    for (const [re, msg] of rules) if (re.test(raw)) return msg();
+    return raw || 'Something went wrong. Please try again.';
+  }
+
+  // ---------- letter encryption (AES-GCM + PBKDF2), raw bytes ----------
+  // message is `bytes` on-chain now, not base64 string. Layout: [1-byte
+  // format version][16-byte salt][12-byte iv][ciphertext]. Version 1 =
+  // passphrase-derived AES-GCM/PBKDF2. (Registered-key encryption is
+  // supported by the contract via registerAsBeneficiary but has no frontend
+  // yet — out of scope for this pass.)
+  const FORMAT_VERSION = 1;
   const PBKDF2_ITERATIONS = 200000;
+  const ENC_OVERHEAD_BYTES = 1 + 16 + 12 + 16; // version + salt + iv + AES-GCM auth tag
 
-  function toB64(bytes) {
-    let bin = '';
-    bytes.forEach(b => bin += String.fromCharCode(b));
-    return btoa(bin);
-  }
-  function fromB64(str) {
-    const bin = atob(str);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes;
-  }
   async function deriveKey(passphrase, salt) {
     const keyMaterial = await crypto.subtle.importKey(
       'raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']
@@ -425,22 +668,57 @@
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const key = await deriveKey(passphrase, salt);
     const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext)));
-    const payload = new Uint8Array(salt.length + iv.length + ciphertext.length);
-    payload.set(salt, 0);
-    payload.set(iv, salt.length);
-    payload.set(ciphertext, salt.length + iv.length);
-    return ENC_PREFIX + toB64(payload);
+    const payload = new Uint8Array(1 + salt.length + iv.length + ciphertext.length);
+    payload[0] = FORMAT_VERSION;
+    payload.set(salt, 1);
+    payload.set(iv, 1 + salt.length);
+    payload.set(ciphertext, 1 + salt.length + iv.length);
+    return payload;
   }
-  async function decryptMessage(stored, passphrase) {
-    const raw = fromB64(stored.slice(ENC_PREFIX.length));
-    const salt = raw.slice(0, 16);
-    const iv = raw.slice(16, 28);
-    const ciphertext = raw.slice(28);
+  async function decryptMessage(bytes, passphrase) {
+    const salt = bytes.slice(1, 17);
+    const iv = bytes.slice(17, 29);
+    const ciphertext = bytes.slice(29);
     const key = await deriveKey(passphrase, salt);
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
     return new TextDecoder().decode(plaintext);
   }
-  function isEncrypted(message) { return typeof message === 'string' && message.startsWith(ENC_PREFIX); }
+  function isEncrypted(bytes) { return bytes && bytes.length > 0 && bytes[0] === FORMAT_VERSION; }
+
+  function updateMsgCounter() {
+    const bytes = new TextEncoder().encode($('msgInput').value).length + ENC_OVERHEAD_BYTES;
+    const max = Number(constraints.maxMessageLength);
+    const el = $('msgCounter');
+    el.textContent = `${bytes} / ${max} bytes once encrypted`;
+    el.classList.toggle('over', bytes > max);
+  }
+
+  // ---------- custom select ----------
+  function initCustomSelect(wrapId, triggerId, listId, onSelect) {
+    const wrap = $(wrapId), trigger = $(triggerId), list = $(listId);
+    const options = Array.from(list.querySelectorAll('[role="option"]'));
+    function open() { list.hidden = false; wrap.dataset.open = 'true'; trigger.setAttribute('aria-expanded', 'true'); }
+    function close() { list.hidden = true; wrap.dataset.open = 'false'; trigger.setAttribute('aria-expanded', 'false'); }
+    trigger.addEventListener('click', () => (list.hidden ? open() : close()));
+    trigger.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); options[0]?.focus(); }
+      else if (e.key === 'Escape') close();
+    });
+    options.forEach((opt, i) => {
+      opt.addEventListener('click', () => { onSelect(opt); close(); trigger.focus(); });
+      opt.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { close(); trigger.focus(); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); (options[i + 1] || options[0]).focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); (options[i - 1] || options[options.length - 1]).focus(); }
+        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(opt); close(); trigger.focus(); }
+        else if (e.key === 'Tab') close();
+      });
+    });
+    document.addEventListener('click', e => {
+      if (!wrap.contains(e.target)) close();
+    });
+    close();
+  }
 
   // ---------- wallet ----------
   async function ensureNetwork() {
@@ -455,6 +733,7 @@
 
   async function connect() {
     if (!window.ethereum) { note($('createMsg'), 'No wallet found — install MetaMask to continue.', 'err'); return; }
+    setBusy($('connectBtn'), true, 'Connecting…');
     try {
       await window.ethereum.request({ method: 'eth_requestAccounts' });
       await ensureNetwork();
@@ -463,8 +742,9 @@
       myAddress = await signer.getAddress();
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
 
-      $('walletStatus').textContent = 'Connected · BOT Chain Testnet';
+      $('walletStatus').textContent = `Connected · ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}`;
       $('walletAddr').textContent = short(myAddress);
+      setBusy($('connectBtn'), false);
       $('connectBtn').textContent = 'Connected';
       $('connectBtn').disabled = true;
       $('createBtn').disabled = false;
@@ -474,7 +754,8 @@
       await refreshOwnerVault();
     } catch (err) {
       console.error(err);
-      note($('createMsg'), err.shortMessage || err.message || 'Connection failed', 'err');
+      setBusy($('connectBtn'), false);
+      note($('createMsg'), friendlyError(err), 'err');
     }
   }
 
@@ -490,7 +771,6 @@
   async function refreshOwnerVault() {
     try {
       const v = await contract.getVault(myAddress);
-      // vault exists
       $('createDoc').style.display = 'none';
       $('vaultDoc').style.display = 'block';
       $('fBalance').textContent = fmtBOT(v.balance);
@@ -498,97 +778,185 @@
       $('fLastCheckIn').textContent = fmtDate(v.lastCheckIn);
       $('fInterval').textContent = fmtInterval(v.checkInInterval);
       ownerDeadline = Number(v.lastCheckIn) + Number(v.checkInInterval);
+      ownerTotalInterval = Number(v.checkInInterval);
+      $('ownerUnlockAt').textContent = `Unlocks ${new Date(ownerDeadline * 1000).toLocaleString()}`;
       $('ownerSeal').innerHTML = sealSVG(v.claimable);
     } catch {
-      // no vault yet — show create form
       $('createDoc').style.display = 'block';
       $('vaultDoc').style.display = 'none';
       ownerDeadline = null;
+      ownerTotalInterval = null;
     }
+  }
+
+  function validateCreateForm() {
+    const ben = $('benInput').value.trim();
+    const amt = $('amtInput').value.trim();
+    const days = Number($('intervalDays').value);
+    const msg = $('msgInput').value.trim();
+    const pass = $('passInput').value;
+    let ok = true;
+
+    const benOk = ethers.isAddress(ben);
+    setInputError($('benInput'), !benOk && ben.length > 0);
+    fieldError($('benError'), ben.length > 0 && !benOk ? 'Not a valid address.' : '');
+    if (!benOk) ok = false;
+
+    const minDepositNum = Number(ethers.formatEther(constraints.minDeposit));
+    const amtOk = amt && Number(amt) >= minDepositNum;
+    setInputError($('amtInput'), amt.length > 0 && !amtOk);
+    fieldError($('amtError'), amt.length > 0 && !amtOk ? `Minimum is ${minDepositNum} BOT.` : '');
+    if (!amtOk) ok = false;
+
+    const minDays = Number(fmtDays(constraints.minInterval)), maxDays = Number(fmtDays(constraints.maxInterval));
+    const daysOk = days >= minDays && days <= maxDays;
+    setInputError($('intervalDays'), !daysOk);
+    fieldError($('intervalError'), !daysOk ? `Enter a number of days between ${minDays} and ${maxDays}.` : '');
+    if (!daysOk) ok = false;
+
+    const encodedLen = new TextEncoder().encode(msg).length + ENC_OVERHEAD_BYTES;
+    const msgOk = msg.length > 0 && encodedLen <= Number(constraints.maxMessageLength);
+    if (!msgOk) ok = false;
+
+    if (!pass) ok = false;
+
+    return ok;
   }
 
   async function createVault() {
     const ben = $('benInput').value.trim();
     const amt = $('amtInput').value.trim();
-    const num = parseInt($('intervalNum').value, 10);
-    const unit = parseInt($('intervalUnit').value, 10);
+    const days = $('intervalDays').value;
     const msg = $('msgInput').value.trim();
     const pass = $('passInput').value;
-    if (!ethers.isAddress(ben)) { note($('createMsg'), 'Enter a valid beneficiary address.', 'err'); return; }
-    if (!amt || Number(amt) <= 0) { note($('createMsg'), 'Enter an amount of BOT to lock.', 'err'); return; }
-    if (!num || num <= 0) { note($('createMsg'), 'Enter a valid silence interval.', 'err'); return; }
-    if (!msg) { note($('createMsg'), 'Write the letter — it is the point.', 'err'); return; }
-    if (!pass) { note($('createMsg'), 'Set a seal passphrase to encrypt the letter.', 'err'); return; }
-    const interval = BigInt(num) * BigInt(unit);
-    $('createBtn').disabled = true;
+
+    if (!validateCreateForm()) {
+      const encodedLen = new TextEncoder().encode(msg).length + ENC_OVERHEAD_BYTES;
+      if (!msg) note($('createMsg'), 'Write the letter — it is the point.', 'err');
+      else if (encodedLen > Number(constraints.maxMessageLength)) note($('createMsg'), 'That letter is too long once encrypted — trim it.', 'err');
+      else if (!pass) note($('createMsg'), 'Set a seal passphrase to encrypt the letter.', 'err');
+      else note($('createMsg'), 'Fix the highlighted fields above.', 'err');
+      return;
+    }
+
+    const interval = BigInt(days) * 86400n;
+    hideTxLink($('createTxLink'));
+    setBusy($('createBtn'), true, 'Encrypting…');
     note($('createMsg'), 'Encrypting the letter…');
     try {
       const encrypted = await encryptMessage(msg, pass);
+      setBusy($('createBtn'), true, 'Confirm in wallet…');
       note($('createMsg'), 'Confirm in your wallet…');
       const tx = await contract.createVault(ben, interval, encrypted, { value: ethers.parseEther(amt) });
+      setBusy($('createBtn'), true, 'Sealing on-chain…');
       note($('createMsg'), 'Sealing on-chain…');
       await tx.wait();
       note($('createMsg'), 'Vault sealed. Keep checking in.', 'ok');
+      showTxLink($('createTxLink'), tx.hash);
       await refreshOwnerVault();
     } catch (err) {
       console.error(err);
-      note($('createMsg'), err.shortMessage || err.message || 'Transaction failed', 'err');
-    } finally { $('createBtn').disabled = false; }
+      note($('createMsg'), friendlyError(err), 'err');
+    } finally { setBusy($('createBtn'), false); }
   }
 
   async function checkIn() {
-    $('checkInBtn').disabled = true;
+    setBusy($('checkInBtn'), true, 'Confirm in wallet…');
+    hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       const tx = await contract.checkIn();
+      setBusy($('checkInBtn'), true, 'Recording…');
       await tx.wait();
       note($('ownerMsg'), 'Proof of life recorded.', 'ok');
+      showTxLink($('ownerTxLink'), tx.hash);
       await refreshOwnerVault();
-      // RPC can serve stale state right after confirmation — refresh again shortly
       setTimeout(refreshOwnerVault, 3000);
       setTimeout(refreshOwnerVault, 8000);
     } catch (err) {
-      note($('ownerMsg'), err.shortMessage || err.message || 'Failed', 'err');
-    } finally { $('checkInBtn').disabled = false; }
+      note($('ownerMsg'), friendlyError(err), 'err');
+    } finally { setBusy($('checkInBtn'), false); }
   }
 
-  async function depositMore() {
-    const amt = prompt('BOT to add:');
-    if (!amt || Number(amt) <= 0) return;
+  function showOnlyInlineForm(id) {
+    const all = ['depositForm', 'withdrawForm', 'closeForm'];
+    const willShow = $(id).hidden; // if currently hidden, we're about to show it
+    all.forEach(fid => { $(fid).hidden = true; });
+    $(id).hidden = willShow ? false : true;
+  }
+
+  async function depositConfirm() {
+    const amt = $('depositAmt').value.trim();
+    if (!amt || Number(amt) <= 0) { fieldError($('depositError'), 'Enter an amount greater than zero.'); setInputError($('depositAmt'), true); return; }
+    fieldError($('depositError'), ''); setInputError($('depositAmt'), false);
+    setBusy($('depositConfirm'), true, 'Confirm in wallet…');
+    hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
-      const tx = await contract.deposit({ value: ethers.parseEther(amt.trim()) });
+      const tx = await contract.deposit({ value: ethers.parseEther(amt) });
+      setBusy($('depositConfirm'), true, 'Adding…');
       await tx.wait();
       note($('ownerMsg'), 'Funds added. Timer reset.', 'ok');
+      showTxLink($('ownerTxLink'), tx.hash);
+      $('depositForm').hidden = true;
+      $('depositAmt').value = '';
       await refreshOwnerVault();
     } catch (err) {
-      note($('ownerMsg'), err.shortMessage || err.message || 'Failed', 'err');
-    }
+      fieldError($('depositError'), friendlyError(err));
+    } finally { setBusy($('depositConfirm'), false); }
   }
 
-  async function withdrawSome() {
-    const amt = prompt('BOT to withdraw:');
-    if (!amt || Number(amt) <= 0) return;
+  async function withdrawConfirm() {
+    const amt = $('withdrawAmt').value.trim();
+    if (!amt || Number(amt) <= 0) { fieldError($('withdrawError'), 'Enter an amount greater than zero.'); setInputError($('withdrawAmt'), true); return; }
+    fieldError($('withdrawError'), ''); setInputError($('withdrawAmt'), false);
+    setBusy($('withdrawConfirm'), true, 'Confirm in wallet…');
+    hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
-      const tx = await contract.withdraw(ethers.parseEther(amt.trim()));
+      const tx = await contract.withdraw(ethers.parseEther(amt));
+      setBusy($('withdrawConfirm'), true, 'Withdrawing…');
       await tx.wait();
       note($('ownerMsg'), 'Withdrawn. Timer reset.', 'ok');
+      showTxLink($('ownerTxLink'), tx.hash);
+      $('withdrawForm').hidden = true;
+      $('withdrawAmt').value = '';
       await refreshOwnerVault();
     } catch (err) {
-      note($('ownerMsg'), err.shortMessage || err.message || 'Failed', 'err');
-    }
+      fieldError($('withdrawError'), friendlyError(err));
+    } finally { setBusy($('withdrawConfirm'), false); }
+  }
+
+  async function closeConfirm() {
+    setBusy($('closeConfirm'), true, 'Confirm in wallet…');
+    hideTxLink($('ownerTxLink'));
+    note($('ownerMsg'), 'Confirm in your wallet…');
+    try {
+      const tx = await contract.closeVault();
+      setBusy($('closeConfirm'), true, 'Closing…');
+      await tx.wait();
+      note($('ownerMsg'), 'Vault closed. Full balance returned.', 'ok');
+      showTxLink($('ownerTxLink'), tx.hash);
+      $('closeForm').hidden = true;
+      await refreshOwnerVault();
+    } catch (err) {
+      note($('ownerMsg'), friendlyError(err), 'err');
+    } finally { setBusy($('closeConfirm'), false); }
   }
 
   // ---------- beneficiary side ----------
   async function findMine() {
     note($('claimMsg'), 'Searching the record…');
+    setBusy($('findBtn'), true, 'Searching…');
     try {
       const owners = await getReadContract().vaultsLeftFor(myAddress);
       const list = $('ownerList');
       list.innerHTML = '';
+      $('claimEmptyState').style.display = 'none';
       if (owners.length === 0) {
-        note($('claimMsg'), 'No vault names this address — yet.', '');
+        note($('claimMsg'), '', '');
+        $('claimEmptyState').textContent = "No vault names this address yet. If you're expecting one, double-check you're looking at the right address, or ask whoever might be leaving you something.";
+        $('claimEmptyState').style.display = 'block';
         return;
       }
       note($('claimMsg'), owners.length + ' vault(s) name you.', 'ok');
@@ -602,8 +970,8 @@
         list.appendChild(li);
       });
     } catch (err) {
-      note($('claimMsg'), err.shortMessage || err.message || 'Lookup failed', 'err');
-    }
+      note($('claimMsg'), friendlyError(err), 'err');
+    } finally { setBusy($('findBtn'), false); }
   }
 
   async function loadClaimVault(owner) {
@@ -617,25 +985,29 @@
       $('cBalance').textContent = fmtBOT(v.balance);
       $('cBeneficiary').textContent = v.beneficiary;
       $('cLastCheckIn').textContent = fmtDate(v.lastCheckIn);
+      $('claimUnlockAt').textContent = `Unlocks ${new Date(claimDeadline * 1000).toLocaleString()}`;
       $('claimSeal').innerHTML = sealSVG(v.claimable);
       const letter = $('claimLetter');
-      const encrypted = isEncrypted(v.message);
+      const msgBytes = ethers.getBytes(v.message);
+      const encrypted = isEncrypted(msgBytes);
       $('passphraseInput').value = '';
       $('decryptRow').style.display = 'none';
       if (v.claimable) {
         letter.classList.remove('sealed');
         $('sealedNote').style.display = 'none';
         if (encrypted) {
-          claimCiphertext = v.message;
+          claimCiphertext = msgBytes;
           letter.textContent = 'Encrypted — enter the passphrase below to reveal.';
-          $('decryptRow').style.display = 'flex';
+          $('decryptRow').style.display = 'block';
+        } else if (msgBytes.length > 0) {
+          letter.textContent = ethers.toUtf8String(msgBytes);
         } else {
-          letter.textContent = v.message;
+          letter.textContent = '(no letter was left)';
         }
         $('claimBtn').disabled = !(myAddress && myAddress.toLowerCase() === v.beneficiary.toLowerCase() && v.balance > 0n);
         note($('claimMsg'), Number(v.balance) === 0 ? 'This vault has already been claimed.' : 'The silence has passed. The seal may be broken.', '');
       } else {
-        letter.textContent = v.message;
+        letter.textContent = encrypted ? 'Sealed — this letter is encrypted until claimable.' : '(sealed)';
         letter.classList.add('sealed');
         $('sealedNote').style.display = 'flex';
         $('claimBtn').disabled = true;
@@ -651,7 +1023,7 @@
     if (!claimCiphertext) return;
     const pass = $('passphraseInput').value;
     if (!pass) { note($('claimMsg'), 'Enter the passphrase.', 'err'); return; }
-    $('revealBtn').disabled = true;
+    setBusy($('revealBtn'), true, 'Revealing…');
     try {
       const plaintext = await decryptMessage(claimCiphertext, pass);
       $('claimLetter').textContent = plaintext;
@@ -659,24 +1031,26 @@
       note($('claimMsg'), 'Letter revealed.', 'ok');
     } catch (err) {
       note($('claimMsg'), 'Wrong passphrase — the letter could not be revealed.', 'err');
-    } finally { $('revealBtn').disabled = false; }
+    } finally { setBusy($('revealBtn'), false); }
   }
 
   async function doClaim() {
     if (!claimTargetOwner) return;
-    $('claimBtn').disabled = true;
+    setBusy($('claimBtn'), true, 'Confirm in wallet…');
+    hideTxLink($('claimTxLink'));
     note($('claimMsg'), 'Confirm in your wallet…');
     try {
       const tx = await contract.claim(claimTargetOwner);
+      setBusy($('claimBtn'), true, 'Breaking the seal…');
       note($('claimMsg'), 'Breaking the seal…');
       await tx.wait();
       note($('claimMsg'), 'Claimed. What was left is now yours.', 'ok');
+      showTxLink($('claimTxLink'), tx.hash);
       await loadClaimVault(claimTargetOwner);
     } catch (err) {
       console.error(err);
-      note($('claimMsg'), err.shortMessage || err.message || 'Claim failed', 'err');
-      $('claimBtn').disabled = false;
-    }
+      note($('claimMsg'), friendlyError(err), 'err');
+    } finally { setBusy($('claimBtn'), false); }
   }
 
   // ---------- countdown ticker ----------
@@ -687,9 +1061,12 @@
       const el = $('ownerCountdown');
       el.textContent = fmtCountdown(left);
       el.classList.toggle('due', left <= 0);
+      el.classList.toggle('warn', left > 0 && ownerTotalInterval && left / ownerTotalInterval < 0.2);
       $('ownerCountLabel').textContent = left <= 0
         ? 'silence exceeded — your beneficiary may now claim'
-        : 'silence remaining before it unlocks';
+        : (ownerTotalInterval && left / ownerTotalInterval < 0.2)
+          ? 'less than 20% of your silence window remains'
+          : 'silence remaining before it unlocks';
       if (left === 0) refreshOwnerVault();
     }
     if (claimDeadline !== null) {
@@ -714,8 +1091,16 @@
   $('connectBtn').addEventListener('click', connect);
   $('createBtn').addEventListener('click', createVault);
   $('checkInBtn').addEventListener('click', checkIn);
-  $('depositBtn').addEventListener('click', depositMore);
-  $('withdrawBtn').addEventListener('click', withdrawSome);
+  $('depositToggleBtn').addEventListener('click', () => showOnlyInlineForm('depositForm'));
+  $('withdrawToggleBtn').addEventListener('click', () => showOnlyInlineForm('withdrawForm'));
+  $('closeToggleBtn').addEventListener('click', () => showOnlyInlineForm('closeForm'));
+  $('depositCancel').addEventListener('click', () => { $('depositForm').hidden = true; fieldError($('depositError'), ''); });
+  $('withdrawCancel').addEventListener('click', () => { $('withdrawForm').hidden = true; fieldError($('withdrawError'), ''); });
+  $('closeCancel').addEventListener('click', () => { $('closeForm').hidden = true; });
+  $('depositConfirm').addEventListener('click', depositConfirm);
+  $('withdrawConfirm').addEventListener('click', withdrawConfirm);
+  $('closeConfirm').addEventListener('click', closeConfirm);
+  $('msgInput').addEventListener('input', updateMsgCounter);
   $('findBtn').addEventListener('click', findMine);
   $('lookupBtn').addEventListener('click', () => {
     const a = $('ownerLookup').value.trim();
@@ -725,8 +1110,17 @@
   $('claimBtn').addEventListener('click', doClaim);
   $('revealBtn').addEventListener('click', revealLetter);
 
-  // initial seals
+  initCustomSelect('presetSelect', 'presetTrigger', 'presetList', opt => {
+    $('intervalDays').value = opt.dataset.days;
+    $('presetLabel').textContent = opt.textContent;
+  });
+
+  // ---------- footer + initial state ----------
+  $('networkBadge').textContent = window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+  $('contractAddr').textContent = `contract: ${CONTRACT_ADDRESS}`;
+  $('explorerLink').href = `${window.LEGACY_VAULT_CONFIG.EXPLORER_BASE}${CONTRACT_ADDRESS}`;
   $('ownerSeal').innerHTML = sealSVG(false);
+  loadConstraints();
 </script>
 </body>
 </html>

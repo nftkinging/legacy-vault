@@ -204,7 +204,6 @@
   <header class="site">
     <span class="wordmark">Legacy Vault</span>
     <nav class="site-nav">
-      <a href="#how-it-works">How it works</a>
       <a href="#faq">FAQ</a>
     </nav>
   </header>
@@ -297,7 +296,9 @@
     <div class="footer-links">
       <span id="contractAddr">contract: —</span>
       <a id="explorerLink" href="#" target="_blank" rel="noopener">view on explorer</a>
-      <a id="auditLink" href="#" target="_blank" rel="noopener">audit report</a>
+      <a id="auditLink" href="#" target="_blank" rel="noopener" hidden>audit report</a>
+      <a id="docsLink" href="#" target="_blank" rel="noopener" hidden>docs</a>
+      <a id="xLink" href="#" target="_blank" rel="noopener" hidden>X</a>
     </div>
   </footer>
 </div>
@@ -308,7 +309,19 @@
   document.getElementById('networkBadge').textContent = cfg.NETWORK_NAME;
   document.getElementById('contractAddr').textContent = `contract: ${cfg.CONTRACT_ADDRESS}`;
   document.getElementById('explorerLink').href = `${cfg.EXPLORER_BASE}${cfg.CONTRACT_ADDRESS}`;
-  document.getElementById('auditLink').href = cfg.AUDIT_REPORT_URL;
+  // Audit link stays hidden until there's a real audit (not the informal review) to point at.
+  if (cfg.AUDIT_REPORT_URL) {
+    const a = document.getElementById('auditLink');
+    a.href = cfg.AUDIT_REPORT_URL; a.hidden = false;
+  }
+  if (cfg.DOCS_URL) {
+    const a = document.getElementById('docsLink');
+    a.href = cfg.DOCS_URL; a.hidden = false;
+  }
+  if (cfg.X_URL) {
+    const a = document.getElementById('xLink');
+    a.href = cfg.X_URL; a.hidden = false;
+  }
 </script>
 </body>
 </html>
