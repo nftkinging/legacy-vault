@@ -242,6 +242,63 @@ accepted in writing with a rationale.
      Chain" — this fix rules out our own check being the bug on top of that, but can't
      rule out a wallet's own registry-based "add network" flow silently substituting
      Datagram's RPC, which is exactly the kind of thing that check exists to catch.
+10. **Real-phone testing found two bugs simulation had missed (2026-07-31):**
+    - **Button flicker.** The connect button visibly cycled through skeleton -> a
+      near-empty ghost -> a solid coloured block with no label before settling. Root
+      cause was two-fold: the real button is `<appkit-button>` containing
+      `<appkit-connect-button>` containing `<wui-connect-button>` — three separate
+      shadow roots deep — and the first fix attempt only checked the outermost one,
+      which never sees a *nested* custom element's own shadow content, so it always
+      fell through to a blind timeout no better than not checking at all. Fixed with a
+      walker that checks both a node's shadow root and its light-DOM (slotted) children
+      at every level — confirmed by walking the live DOM that the label text is
+      slotted into `<wui-connect-button>`, not rendered inside its own shadow tree.
+      Separately, that inner component legitimately swaps its whole template for a
+      loading spinner while AppKit resolves whether a session should restore, so
+      "has text right now" isn't "done rendering" — the reveal now waits for several
+      consecutive identical non-empty reads, which survives that swap. Also fixed a
+      real casing mismatch: the skeleton is a plain `<button>`, which brand.css
+      uppercases globally (`button { text-transform: uppercase }`), while AppKit's
+      real button is sealed inside a shadow root that global rule can't reach and
+      stays mixed-case "Connect Wallet" — the skeleton now opts out of that rule.
+    - **Connection declined, still.** The page-load + modal-close pairing cleanup
+      (item 9) didn't fix it. Broadened to clear on the modal's *open* edge too, not
+      just close — reasoning: on iOS, tapping a WalletConnect-based wallet backgrounds
+      Safari to deep-link into the wallet app without the modal ever technically
+      closing (`open` stays `true` throughout), so if the user returns and retaps
+      without a real close in between, the old close-only cleanup never got a chance
+      to run between the two attempts. Clearing on open is safe for the same reason
+      clearing on close was: pairing generation only starts once a WalletConnect-based
+      wallet is actually selected, a later, separate step, so nothing is at risk of
+      being deleted mid-creation. This is a reasoned fix, not a confirmed one — it
+      could not be verified against the real failure without a physical device and
+      MetaMask installed.
+    - Added real lifecycle logging for exactly this situation: `appKit.subscribeEvents`
+      (AppKit's own modal/connect events) and the underlying WalletConnect SignClient's
+      `session_proposal` / `proposal_expire` / `session_delete` / `session_expire`
+      events, all funneled into one `window.__wcLog` sink. Viewable two ways — pick
+      whichever is available when testing:
+      - **Safari remote debugging (needs a Mac):** on the iPhone, Settings > Safari >
+        Advanced > turn on Web Inspector. On the Mac, Safari > Settings > Advanced >
+        turn on "Show features for web developers" (adds the Develop menu). Connect
+        the iPhone by USB (or same Wi-Fi network with Wi-Fi debugging enabled), open
+        the site in mobile Safari, then on the Mac pick the iPhone and the tab from
+        Safari's Develop menu — this opens a full Web Inspector with console, network,
+        and DOM, same as desktop.
+      - **On-page debug overlay (no Mac needed):** tap "debug log" in the footer on
+        the phone itself. Shows the same log lines as the console, newest first,
+        timestamped in ms since page load — reproduce the bug, then screenshot or
+        scroll the panel to read back exactly what happened (`modal:open`/`modal:close`,
+        `cleanup:start`/`cleanup:disconnected`, `account`, `wc:session_proposal`,
+        `wc:proposal_expire`, etc.).
+      - To test the fix specifically: tap Connect Wallet, tap MetaMask, let it deep-link
+        into the MetaMask app, back out or let it decline, return to Safari, tap
+        Connect Wallet again. The log should show `modal:close` -> `cleanup:start` (from
+        the first attempt closing) and then `modal:open` -> `cleanup:start` again (from
+        the second attempt opening) before any new `wc:session_proposal`. If "Connection
+        declined" still happens with that sequence present in the log, the pairing
+        cleanup isn't the actual cause and the log's exact sequence at the moment of
+        failure is what's needed next.
 
 **Exit criterion:** clean end-to-end runs, no critical feedback outstanding.
 

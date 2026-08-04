@@ -51,6 +51,14 @@
     background: var(--wax); color: var(--parchment-2);
     border: none; border-radius: 2px; cursor: not-allowed;
     font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
+    /* Every other <button> on the page is uppercased by the global
+       `button { text-transform: uppercase }` rule in brand.css — this one
+       must opt out, since AppKit's real button (sealed inside a shadow
+       root, so that global rule can't reach it) renders mixed-case
+       "Connect Wallet". Without this override the skeleton read "CONNECT
+       WALLET" while the real button read "Connect Wallet" — a visible
+       mismatch at the swap. */
+    text-transform: none;
     opacity: 1; transition: opacity var(--duration-state) var(--ease);
   }
   appkit-button { opacity: 0; transition: opacity var(--duration-state) var(--ease); }
@@ -72,6 +80,40 @@
     color: inherit; font: inherit; text-decoration: underline;
     text-underline-offset: 2px;
   }
+
+  .debug-log-toggle {
+    background: none; border: none; padding: 0; cursor: pointer;
+    color: var(--muted); font-family: var(--font-data); font-size: var(--text-xs);
+    text-decoration: underline; text-underline-offset: 2px; text-transform: none;
+  }
+  .debug-log-toggle:hover { color: var(--ink); }
+  .debug-log-panel[hidden] { display: none; }
+  .debug-log-panel {
+    position: fixed; left: var(--space-3); right: var(--space-3); bottom: var(--space-3);
+    max-height: 45vh; overflow-y: auto;
+    background: var(--ink); color: var(--parchment-2);
+    border-radius: 4px; box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+    z-index: 9999;
+  }
+  .debug-log-header {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    position: sticky; top: 0; background: var(--ink);
+    font-family: var(--font-data); font-size: var(--text-xs);
+  }
+  .debug-log-header-actions { display: flex; gap: var(--space-2); }
+  .debug-log-header button {
+    background: none; border: 1px solid rgba(255,255,255,0.35); color: inherit;
+    font-family: var(--font-data); font-size: 10px; text-transform: none;
+    padding: 2px 8px; cursor: pointer; border-radius: 2px;
+  }
+  .debug-log-body {
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-data); font-size: 11px; line-height: 1.6;
+  }
+  .debug-log-line { padding: 2px 0; border-bottom: 1px dotted rgba(255,255,255,0.12); word-break: break-word; }
+  .debug-log-time { color: var(--gilt-hover); margin-right: 6px; }
   .wrong-network-switch:hover { color: var(--gilt-hover); }
   .wrong-network-switch:focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
 
@@ -423,8 +465,20 @@
     <span class="network-badge" id="networkBadge">BOT Chain Testnet</span>
     <span id="contractAddr">contract: —</span>
     <a id="explorerLink" href="#" target="_blank" rel="noopener">view contract on explorer</a>
+    <button type="button" id="debugLogToggle" class="debug-log-toggle">debug log</button>
   </footer>
 
+</div>
+
+<div id="debugLogPanel" class="debug-log-panel" hidden>
+  <div class="debug-log-header">
+    <span>Wallet connection log</span>
+    <span class="debug-log-header-actions">
+      <button type="button" id="debugLogClear">clear</button>
+      <button type="button" id="debugLogClose">close</button>
+    </span>
+  </div>
+  <div id="debugLogBody" class="debug-log-body"></div>
 </div>
 
 <script src="config.js"></script>
@@ -530,6 +584,36 @@
       if (typeof window.__onAppKitModalStateChange === 'function') window.__onAppKitModalStateChange(state);
     });
 
+    // Real lifecycle visibility for debugging "Connection declined — a
+    // previous request is still active" on real devices, where we can't
+    // attach a debugger. subscribeEvents gives AppKit's own high-level
+    // events (modal open/close, wallet selected, connect success/error);
+    // the SignClient events underneath give the actual WalletConnect
+    // protocol lifecycle — specifically session_proposal (a new pairing
+    // attempt begins) and proposal_expire/session_delete (one ends) are
+    // what answer "is more than one request firing" and "is one left
+    // dangling." Both funnel into the same __wcLog sink as our own code,
+    // so the debug panel shows one merged timeline instead of two.
+    appKit.subscribeEvents(event => {
+      if (window.__wcLog) window.__wcLog('appkit:' + (event?.data?.event || 'event'), event?.data?.properties);
+    });
+    appKit.getUniversalProvider().then(universalProvider => {
+      if (!universalProvider || !universalProvider.client) return;
+      ['session_proposal', 'proposal_expire', 'session_connect', 'session_delete', 'session_expire']
+        .forEach(evtName => {
+          try {
+            universalProvider.client.on(evtName, data => {
+              if (window.__wcLog) {
+                window.__wcLog('wc:' + evtName, {
+                  id: data?.id,
+                  topic: data?.topic || data?.params?.pairingTopic
+                });
+              }
+            });
+          } catch (e) { /* older/newer client shape — skip that one event */ }
+        });
+    }).catch(() => {});
+
     window.dispatchEvent(new Event('legacyvault:appkit-ready'));
   } catch (err) {
     console.error('Wallet connection (Reown AppKit) failed to initialize:', err);
@@ -542,6 +626,44 @@
   const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
 
+  // ---- wallet connection debug log ----
+  // "Connection declined" only reproduces on a real phone, where there's
+  // no attached debugger. This gives two ways to see it: the browser
+  // console (Safari remote debugging from a Mac), and an on-page panel
+  // (tap "debug log" in the footer) for when a Mac isn't available.
+  const walletDebugLog = [];
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function renderWalletDebugLog() {
+    const panel = document.getElementById('debugLogPanel');
+    const body = document.getElementById('debugLogBody');
+    if (!body || !panel || panel.hidden) return;
+    body.innerHTML = walletDebugLog.slice().reverse().map(l =>
+      `<div class="debug-log-line"><span class="debug-log-time">${l.t}ms</span>${escapeHtml(l.label)}` +
+      (l.data !== undefined ? ' ' + escapeHtml(JSON.stringify(l.data)) : '') + '</div>'
+    ).join('');
+  }
+  window.__wcLog = (label, data) => {
+    const line = { t: Math.round(performance.now()), label, data };
+    walletDebugLog.push(line);
+    if (walletDebugLog.length > 300) walletDebugLog.shift();
+    console.log(`[wallet ${line.t}ms] ${label}`, data !== undefined ? data : '');
+    renderWalletDebugLog();
+  };
+  document.getElementById('debugLogToggle').addEventListener('click', () => {
+    const panel = document.getElementById('debugLogPanel');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) renderWalletDebugLog();
+  });
+  document.getElementById('debugLogClose').addEventListener('click', () => {
+    document.getElementById('debugLogPanel').hidden = true;
+  });
+  document.getElementById('debugLogClear').addEventListener('click', () => {
+    walletDebugLog.length = 0;
+    renderWalletDebugLog();
+  });
+
   // A previous connection attempt that never finished (backed out of the
   // wallet app, closed the modal mid-pairing, a stale pairing left over
   // from an earlier tab/session) can leave a WalletConnect pairing behind
@@ -551,54 +673,106 @@
   // pairing anymore. Clearing every existing pairing is safe: an
   // in-progress *session* (a real, connected wallet) lives in
   // client.session, not client.pairing, so this never touches one.
-  async function clearStaleWalletConnectPairings() {
+  async function clearStaleWalletConnectPairings(reason) {
     try {
       const appKit = window.__legacyVaultAppKit;
       const universalProvider = appKit && appKit.getUniversalProvider && await appKit.getUniversalProvider();
       const pairings = universalProvider && universalProvider.client && universalProvider.client.pairing
         ? universalProvider.client.pairing.getAll()
         : [];
+      window.__wcLog && window.__wcLog('cleanup:start', { reason, pairingCount: pairings.length, topics: pairings.map(p => p.topic) });
       for (const p of pairings) {
         try {
           await universalProvider.client.disconnect({
             topic: p.topic,
             reason: { code: 6000, message: 'Stale pairing cleared before new connection attempt' }
           });
-        } catch (e) { /* best effort — a pairing already gone is not an error */ }
+          window.__wcLog && window.__wcLog('cleanup:disconnected', { topic: p.topic });
+        } catch (e) {
+          // best effort — a pairing already gone is not an error
+          window.__wcLog && window.__wcLog('cleanup:disconnect-failed', { topic: p.topic, message: e && e.message });
+        }
       }
     } catch (e) {
       console.warn('Could not clear stale WalletConnect pairings:', e);
+      window.__wcLog && window.__wcLog('cleanup:error', { message: e && e.message });
     }
   }
 
-  // Timing matters here. Clearing on every modal *open* risks a race: if
-  // AppKit has already started generating a pairing for the attempt the
-  // user is opening the modal to make, clearing pairings right after could
-  // delete that brand-new one out from under it. Instead:
-  //  - once at load, before the user has done anything, so a pairing
-  //    orphaned by an earlier tab/session can never block the first
-  //    attempt of this one;
-  //  - again when the modal closes without having connected, so an
-  //    abandoned attempt (closed mid-pairing) can't block the *next* one
-  //    either. By the time `open` flips false the attempt is already over,
-  //    so there's nothing left to race with.
-  let walletConnectWasOpen = false;
+  // Clear stale pairings on BOTH the open and close edge of the modal, not
+  // just close. Close-only turned out not to be enough: on iOS, tapping a
+  // WalletConnect-based wallet backgrounds Safari to deep-link into the
+  // wallet app without the modal ever actually closing (`open` stays
+  // true the whole time) — so if the user returns and retaps without the
+  // modal round-tripping through a real close, the previous cleanup never
+  // ran between the two attempts. Clearing on open is safe: at the instant
+  // the modal opens nothing has been selected yet, so there is no
+  // in-flight pairing for *this* attempt to race with — pairing
+  // generation only starts once the user picks a WalletConnect-based
+  // wallet, a later, separate step.
   window.__onAppKitModalStateChange = (state) => {
-    if (state.open) { walletConnectWasOpen = true; return; }
-    if (!walletConnectWasOpen) return;
-    walletConnectWasOpen = false;
+    window.__wcLog && window.__wcLog('modal:' + (state.open ? 'open' : 'close'));
     const appKit = window.__legacyVaultAppKit;
-    if (appKit && !appKit.getIsConnectedState()) clearStaleWalletConnectPairings();
+    if (appKit && !appKit.getIsConnectedState()) clearStaleWalletConnectPairings(state.open ? 'modal-open' : 'modal-close');
   };
 
-  // Cross-fade the skeleton for the real <appkit-button> once AppKit has
-  // actually loaded and initialized — not before, since the custom element
-  // has no content (and no reserved size of its own) until then. Registered
-  // here, ahead of the module script's dispatch, because classic scripts
-  // run before deferred module scripts regardless of source order.
+  // createAppKit() returning only means our JS call finished — the real
+  // button is <appkit-button> containing <appkit-connect-button>
+  // containing <wui-connect-button>, THREE separate shadow roots deep, and
+  // its label only lands once AppKit's own account/chain state resolves.
+  // Two distinct problems compounded into the three-state flicker a real
+  // phone showed:
+  //  1. `shadowRoot.textContent` does not see past a *nested* custom
+  //     element's own separate shadow root — checking only the outermost
+  //     shadowRoot (as a first attempt at this fix did) always read empty
+  //     and fell through to a dumb timeout, no better than not checking at
+  //     all. Confirmed by walking the actual DOM: the label text is a
+  //     slotted (light-DOM) child of <wui-connect-button>, which *also*
+  //     has its own internal shadow root — so a correct check has to walk
+  //     both a node's shadow root *and* its light-DOM children at every
+  //     level, not just one or the other.
+  //  2. Once that's fixed, the label can still legitimately disappear and
+  //     reappear: wui-connect-button swaps its whole template to a loading
+  //     spinner while AppKit is still resolving whether a session should
+  //     restore, so "has text right now" is not the same as "done
+  //     rendering." Requiring several consecutive identical non-empty
+  //     reads (not just one) is what survives that spinner swap.
+  function getDeepText(node) {
+    let text = '';
+    if (node.shadowRoot) {
+      for (const child of node.shadowRoot.childNodes) {
+        text += child.nodeType === Node.TEXT_NODE ? child.nodeValue : getDeepText(child);
+      }
+    }
+    for (const child of node.childNodes) {
+      text += child.nodeType === Node.TEXT_NODE ? child.nodeValue : getDeepText(child);
+    }
+    return text;
+  }
+  function waitForAppKitButtonContent(callback) {
+    const btn = document.querySelector('appkit-button');
+    const deadline = performance.now() + 5000; // reveal anyway rather than hang forever
+    let stableFrames = 0;
+    let lastText = null;
+    function check() {
+      const text = btn ? getDeepText(btn).trim() : '';
+      stableFrames = (text.length > 0 && text === lastText) ? stableFrames + 1 : 0;
+      lastText = text;
+      if (stableFrames >= 6 || performance.now() > deadline) { callback(); return; }
+      requestAnimationFrame(check);
+    }
+    requestAnimationFrame(check);
+  }
+
+  // Registered here, ahead of the module script's dispatch, because
+  // classic scripts run before deferred module scripts regardless of
+  // source order.
   window.addEventListener('legacyvault:appkit-ready', () => {
-    document.getElementById('walletCompact').classList.add('is-ready');
-    if (!window.__legacyVaultAppKit.getIsConnectedState()) clearStaleWalletConnectPairings();
+    window.__wcLog && window.__wcLog('appkit-ready');
+    if (!window.__legacyVaultAppKit.getIsConnectedState()) clearStaleWalletConnectPairings('page-load');
+    waitForAppKitButtonContent(() => {
+      document.getElementById('walletCompact').classList.add('is-ready');
+    });
   });
   window.addEventListener('legacyvault:appkit-error', () => {
     const skeleton = document.getElementById('walletSkeleton');
@@ -980,6 +1154,7 @@
   // — which is what makes "stay connected across reload" and "restore after
   // returning from a mobile wallet app" work with no extra code here.
   window.__onAppKitAccount = async (account) => {
+    window.__wcLog && window.__wcLog('account', { isConnected: account?.isConnected, address: account?.address });
     hideWrongNetworkBanner();
 
     if (!account || !account.isConnected || !account.address) {
@@ -1002,8 +1177,10 @@
       $('lookupBtn').disabled = false;
 
       await refreshOwnerVault();
+      window.__wcLog && window.__wcLog('account:ready', { address: myAddress });
     } catch (err) {
       console.error(err);
+      window.__wcLog && window.__wcLog('account:error', { message: err && err.message, wrongChainRpc: !!(err && err.wrongChainRpc) });
       clearConnectionState();
       if (err.wrongChainRpc) showWrongNetworkBanner();
       else note($('createMsg'), friendlyError(err), 'err');
