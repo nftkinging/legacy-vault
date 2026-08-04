@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Register to receive a letter — Legacy Vault</title>
+<meta name="description" content="Someone may have left you funds and a private letter on Legacy Vault. Register once so it can be locked to you directly — no passphrase to lose." />
+<link rel="icon" href="brand/mark-mini.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="brand.css">
+<link rel="preconnect" href="https://esm.sh" crossorigin>
+<link rel="modulepreload" href="https://esm.sh/@reown/appkit@1.8.23">
+<link rel="modulepreload" href="https://esm.sh/@reown/appkit@1.8.23/networks">
+<link rel="modulepreload" href="https://esm.sh/@reown/appkit-adapter-ethers@1.8.23">
+<style>
+  .wrap { max-width: 640px; margin: 0 auto; padding: var(--space-9) var(--space-4) var(--space-9); position: relative; z-index: 1; }
+
+  .app-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-4); flex-wrap: wrap;
+    padding-bottom: var(--space-4); margin-bottom: var(--space-6);
+    border-bottom: 1px solid var(--rule);
+  }
+  .lockup-h { display: flex; align-items: center; gap: var(--space-3); text-decoration: none; }
+  .lockup-h .mark { width: 26px; height: 26px; flex-shrink: 0; }
+  .lockup-h .word { font-family: var(--font-display); font-weight: 400; font-size: var(--text-lg); letter-spacing: 0.03em; color: var(--text); }
+
+  .wallet-compact {
+    display: grid; justify-items: end; align-items: center;
+    min-width: 116px; min-height: 40px;
+  }
+  .wallet-compact > * { grid-area: 1 / 1; }
+  .wallet-skeleton {
+    width: 116px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--wax); color: var(--parchment-2);
+    border: none; border-radius: 2px; cursor: not-allowed;
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
+    text-transform: none;
+    opacity: 1; transition: opacity var(--duration-state) var(--ease);
+  }
+  appkit-button { opacity: 0; transition: opacity var(--duration-state) var(--ease); }
+  .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
+  .wallet-compact.is-ready appkit-button { opacity: 1; }
+
+  .doc {
+    background: var(--grain-url) repeat, var(--parchment-2);
+    background-size: 96px 96px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-7) var(--space-6);
+    margin: var(--space-3) var(--space-1) var(--space-6);
+  }
+  .doc h2 {
+    font-size: var(--text-sm); font-family: var(--font-data); font-weight: 500;
+    letter-spacing: 0.24em; text-transform: uppercase;
+    text-align: center; margin: 0 0 var(--space-6); color: var(--muted);
+  }
+  .doc p { font-family: var(--font-display); font-size: var(--text-md); line-height: 1.7; color: var(--text); margin: 0 0 var(--space-4); }
+  .doc p:last-child { margin-bottom: 0; }
+  .doc ul { margin: 0 0 var(--space-5); padding-left: 1.3em; }
+  .doc li { font-family: var(--font-display); font-size: var(--text-md); line-height: 1.7; color: var(--text); margin-bottom: var(--space-2); }
+  .doc .mono { font-family: var(--font-data); font-size: var(--text-sm); color: var(--muted); }
+
+  .from-line {
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.04em;
+    color: var(--wax); text-align: center; margin: 0 0 var(--space-5);
+    padding: var(--space-3) var(--space-4); background: rgba(158,43,37,0.06);
+    border: 1px solid rgba(158,43,37,0.25); border-radius: 2px;
+  }
+
+  .actions { display: flex; justify-content: center; gap: var(--space-3); margin-top: var(--space-6); flex-wrap: wrap; }
+  .msg-line { font-family: var(--font-data); font-size: var(--text-xs); margin-top: var(--space-4); text-align: center; min-height: 18px; }
+  .msg-line.err { color: var(--wax); }
+  .msg-line.ok { color: var(--ok); }
+  .tx-link { display: block; text-align: center; font-family: var(--font-data); font-size: var(--text-xs); margin-top: var(--space-2); }
+  .tx-link:not([href]) { display: none; }
+
+  .key-backup-text {
+    width: 100%; box-sizing: border-box; resize: vertical; min-height: 90px;
+    font-family: var(--font-data); font-size: 11px; line-height: 1.5;
+    background: var(--parchment-3); border: 1px solid var(--rule); border-radius: 2px;
+    padding: var(--space-3); color: var(--text); margin: var(--space-2) 0 var(--space-4);
+  }
+
+  .link-style {
+    background: none; border: none; padding: 0; cursor: pointer;
+    color: var(--wax); font: inherit; text-decoration: underline; text-underline-offset: 2px;
+  }
+  .link-style:hover { color: var(--wax-hover); }
+
+  details { margin-bottom: var(--space-4); }
+  details:last-child { margin-bottom: 0; }
+  summary {
+    font-family: var(--font-data); font-size: var(--text-sm); color: var(--text);
+    cursor: pointer; padding: var(--space-2) 0;
+  }
+  summary:hover { color: var(--wax); }
+  details p { font-size: var(--text-sm); margin-top: var(--space-2); }
+
+  footer {
+    display: flex; align-items: center; justify-content: center; gap: var(--space-4);
+    flex-wrap: wrap; padding-top: var(--space-6); border-top: 1px solid var(--rule);
+    font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted);
+  }
+  footer a { color: var(--muted); }
+  .network-badge {
+    border: 1px solid var(--muted); border-radius: 2px; padding: 2px var(--space-2);
+    letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px;
+  }
+</style>
+</head>
+<body data-register="day">
+<div class="wrap">
+
+  <header class="app-header">
+    <a class="lockup-h" href="index.html" aria-label="Legacy Vault, home">
+      <svg class="mark" viewBox="0 0 200 200" aria-hidden="true">
+        <defs><radialGradient id="hdrMarkReg" cx="35%" cy="30%" r="78%"><stop offset="0%" stop-color="#B8443C"/><stop offset="52%" stop-color="#9E2B25"/><stop offset="100%" stop-color="#701E1B"/></radialGradient></defs>
+        <path fill="url(#hdrMarkReg)" d="M100.00,26.00 C113.90,25.89 116.90,24.08 129.28,29.32 C141.65,34.57 142.33,38.08 151.97,48.03 C161.61,57.98 164.51,58.73 169.75,71.11 C175.00,83.48 174.55,86.47 174.00,100.00 C173.45,113.53 172.35,115.22 167.44,127.94 C162.54,140.65 159.56,142.92 153.39,153.39 C147.21,163.85 150.47,167.01 141.50,171.88 C132.53,176.75 125.58,173.46 115.70,173.85 C105.82,174.24 110.66,174.37 100.00,173.50 C89.34,172.63 83.21,175.42 70.92,170.21 C58.63,165.01 58.06,161.46 48.38,151.62 C38.70,141.78 35.58,141.18 30.25,128.89 C24.92,116.60 26.22,113.85 26.00,100.00 C25.78,86.15 23.99,83.01 29.32,70.72 C34.65,58.43 38.48,58.13 48.38,48.38 C58.28,38.63 58.63,35.11 70.92,29.79 C83.21,24.46 86.10,26.11 100.00,26.00 Z"/>
+        <g transform="translate(61,64)">
+          <g transform="translate(-0.8,-0.8)" fill="#4A1512" opacity="0.5"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+          <g transform="translate(0.8,0.8)" fill="#C97B6F" opacity="0.4"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+          <g fill="#87231D"><path d="M8,6 L20,6 L20,50 L48,50 L48,60 L8,60 Z"/><path d="M18,6 L44,56 L70,6 L62,6 L44,40 L26,6 Z"/></g>
+        </g>
+      </svg>
+      <span class="word">Legacy Vault</span>
+    </a>
+    <div class="wallet-compact" id="walletCompact">
+      <button type="button" class="wallet-skeleton" id="walletSkeleton" disabled aria-hidden="true">Connect Wallet</button>
+      <appkit-button balance="show"></appkit-button>
+    </div>
+  </header>
+
+  <div class="doc" id="introDoc">
+    <h2>You may have been left something</h2>
+    <p class="from-line" id="fromLine" hidden></p>
+    <p>
+      Legacy Vault lets someone lock funds and a private letter for you, to be handed over
+      only if they go quiet for a long time — months or years, whatever they chose. If
+      you've been named, you don't have to do anything right now to eventually receive it.
+    </p>
+    <p>
+      There's one optional step, though, that makes the letter itself safer to read.
+    </p>
+    <h2 style="margin-top:var(--space-7);">Why register</h2>
+    <p>
+      Right now, if someone names you, they also have to hand you a secret passphrase
+      separately — in person, by message, however they can. If that passphrase never
+      reaches you, the letter can never be opened, even though any funds left for you are
+      still yours to claim.
+    </p>
+    <p>
+      Registering removes that risk entirely. It publishes a key that only you hold, so
+      anyone who names you afterward can lock their letter to you directly — no passphrase
+      for anyone to lose, forget, or fail to deliver in time.
+    </p>
+    <h2 style="margin-top:var(--space-7);">Before you start</h2>
+    <ul>
+      <li>You'll need a crypto wallet — an app like MetaMask that holds a small amount of
+        BOT to cover the network fee. If you don't have one yet, the connect button above
+        will offer to set one up.</li>
+      <li>This is one small transaction on BOT Chain. It costs a tiny network fee, paid
+        from your own wallet — Legacy Vault doesn't charge anything.</li>
+      <li>At the end, you'll be shown a backup file. <strong>Save it somewhere you won't
+        lose it</strong> — a password manager, a drive, printed and filed away. It's the
+        only way to read a letter if you ever open one from a different device.</li>
+    </ul>
+    <p class="msg-line" style="margin-top:var(--space-6);">Connect your wallet above to continue.</p>
+  </div>
+
+  <div class="doc" id="alreadyRegisteredDoc" hidden>
+    <h2>Already registered</h2>
+    <p>This address has already registered a key (version <span id="existingVersion" class="mono"></span>). Nothing else to do — anyone naming you from now on will lock straight to it.</p>
+    <p>If you've lost the backup file for your current key and want to start fresh, you can register a new one — letters already sent to the old key will still need it to open, but anything sent after a new registration will use the new one.</p>
+    <div class="actions">
+      <button type="button" class="link-style" id="showRotateBtn">Register a new key anyway</button>
+    </div>
+  </div>
+
+  <div class="doc" id="registerDoc" hidden>
+    <h2>Register your key</h2>
+    <p>Connected as <span class="mono" id="connectedAddr"></span>.</p>
+    <p>This generates a key in your browser, publishes the public half on-chain, and asks
+      your wallet to confirm one small transaction. The private half never leaves this
+      device unless you export it yourself in the next step.</p>
+    <div class="actions">
+      <button class="btn-wax" id="registerBtn">Register to receive letters safely</button>
+    </div>
+    <div class="msg-line" id="registerMsg"></div>
+    <a class="tx-link" id="registerTxLink" target="_blank" rel="noopener"></a>
+  </div>
+
+  <div class="doc" id="successDoc" hidden>
+    <h2>You're registered</h2>
+    <p>
+      <strong>Save the backup file below somewhere safe.</strong> Legacy Vault doesn't keep
+      a copy anywhere — if you lose it and later need to read a letter from a different
+      device, you won't be able to. Any funds left for you stay claimable either way; only
+      the letter itself depends on this.
+    </p>
+    <div class="actions">
+      <button class="btn-wax" id="downloadKeyBtn">Download backup file</button>
+    </div>
+    <label for="keyBackupText" class="field-hint">Or copy the text directly:</label>
+    <textarea id="keyBackupText" class="key-backup-text" readonly></textarea>
+    <p class="field-hint" style="text-align:center;">
+      This browser has already saved a copy too — you can read letters here without the
+      file unless you clear your browser's site data.
+    </p>
+  </div>
+
+  <div class="doc" id="faqDoc">
+    <h2>Common questions</h2>
+    <details>
+      <summary>Is this safe? Is this a scam?</summary>
+      <p>Registering only publishes a key — it never asks for money, seed phrases, or
+        passwords from you, and it never sends anything anywhere. The one transaction you
+        approve is visible in your wallet before you confirm it, and on the public
+        explorer afterward.</p>
+    </details>
+    <details>
+      <summary>Do I need to do this right now?</summary>
+      <p>No. Registering only matters before someone encrypts a letter to you — once
+        that's happened, registering later triggers a prompt for them to re-encrypt it to
+        your new key, but there's no deadline on your end.</p>
+    </details>
+    <details>
+      <summary>What if I don't have a crypto wallet?</summary>
+      <p>The connect button at the top of this page will offer to help you set one up if
+        it doesn't find one already. It only takes a couple of minutes.</p>
+    </details>
+    <details>
+      <summary>What does this cost?</summary>
+      <p>A small BOT Chain network fee — typically a fraction of a cent's worth of
+        computation, paid to the network, not to Legacy Vault. You'll see the exact amount
+        in your wallet before confirming.</p>
+    </details>
+  </div>
+
+  <footer>
+    <span class="network-badge" id="networkBadge">BOT Chain Testnet</span>
+    <a href="index.html">about Legacy Vault</a>
+  </footer>
+
+</div>
+
+<script src="config.js"></script>
+<script src="beneficiary-crypto.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
+<script type="module">
+  // Same AppKit setup as app.html — see that file for the full rationale
+  // (esm.sh for a build-free load, the theme-fix for AppKit 1.8.23's
+  // unsubstituted "-base" tokens). Kept in sync deliberately rather than
+  // shared, since this page only needs connect/account, not the full
+  // vault-management surface.
+  import { createAppKit } from 'https://esm.sh/@reown/appkit@1.8.23';
+  import { defineChain } from 'https://esm.sh/@reown/appkit@1.8.23/networks';
+  import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers@1.8.23';
+
+  const cfg = window.LEGACY_VAULT_CONFIG;
+  const toNetwork = n => defineChain({
+    id: n.id,
+    caipNetworkId: n.caipNetworkId,
+    chainNamespace: 'eip155',
+    name: n.name,
+    nativeCurrency: n.nativeCurrency,
+    rpcUrls: { default: { http: n.rpcUrls } },
+    blockExplorers: { default: { name: 'Explorer', url: n.explorerUrl } }
+  });
+
+  const testnetNetwork = toNetwork(cfg.NETWORKS.testnet);
+  const mainnetNetwork = toNetwork(cfg.NETWORKS.mainnet);
+  const isMainnetActive = cfg.CHAIN_ID_HEX === cfg.NETWORKS.mainnet.chainIdHex;
+  const activeNetwork = isMainnetActive ? mainnetNetwork : testnetNetwork;
+
+  try {
+    const appKit = createAppKit({
+      adapters: [new EthersAdapter()],
+      networks: [activeNetwork, isMainnetActive ? testnetNetwork : mainnetNetwork],
+      defaultNetwork: activeNetwork,
+      projectId: cfg.WALLETCONNECT_PROJECT_ID,
+      metadata: { ...cfg.APPKIT_METADATA, url: window.location.origin },
+      features: { analytics: false, email: false, socials: false, onramp: false, swaps: false },
+      themeMode: 'light',
+      themeVariables: {
+        '--w3m-accent': '#9E2B25',
+        '--w3m-color-mix': '#F0E7D6',
+        '--w3m-color-mix-strength': 20,
+        '--w3m-border-radius-master': '2px'
+      }
+    });
+
+    window.__legacyVaultAppKit = appKit;
+
+    const themeFix = document.createElement('style');
+    themeFix.textContent = `:root {
+      --apkt-tokens-core-backgroundAccentPrimary-base: #9E2B25 !important;
+      --apkt-tokens-theme-backgroundPrimary-base: #FBF6EC !important;
+      --apkt-tokens-core-backgroundAccentCertified: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-textAccentCertified: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-iconAccentCertified: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-borderSecondary: color-mix(in srgb, #F0E7D6 20%, #C39B4A) !important;
+      --apkt-tokens-core-foregroundSecondary020: color-mix(in srgb, #F0E7D6 20%, rgba(195, 155, 74, 0.2)) !important;
+      --apkt-tokens-core-foregroundSecondary040: color-mix(in srgb, #F0E7D6 20%, rgba(195, 155, 74, 0.4)) !important;
+      --apkt-tokens-core-foregroundSecondary060: color-mix(in srgb, #F0E7D6 20%, rgba(195, 155, 74, 0.6)) !important;
+    }`;
+    document.head.appendChild(themeFix);
+
+    appKit.subscribeAccount(account => {
+      if (typeof window.__onAppKitAccount === 'function') window.__onAppKitAccount(account);
+    });
+
+    window.dispatchEvent(new Event('legacyvault:appkit-ready'));
+  } catch (err) {
+    console.error('Wallet connection (Reown AppKit) failed to initialize:', err);
+    window.__legacyVaultAppKitError = err;
+    window.dispatchEvent(new Event('legacyvault:appkit-error'));
+  }
+</script>
+<script>
+  const $ = id => document.getElementById(id);
+  const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
+  const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
+  const ABI = [
+    "function registerAsBeneficiary(bytes _pubKey) external",
+    "function beneficiaryKeyCount(address _beneficiary) external view returns (uint256)",
+    "function currentBeneficiaryKey(address _beneficiary) external view returns (bytes key, uint256 version)"
+  ];
+
+  let provider, signer, contract, readContract, myAddress;
+
+  function getReadContract() {
+    if (contract) return contract;
+    if (!readContract) readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, new ethers.JsonRpcProvider(NETWORK_PARAMS.rpcUrls[0]));
+    return readContract;
+  }
+  function getActiveChainId() {
+    const { NETWORKS, CHAIN_ID_HEX } = window.LEGACY_VAULT_CONFIG;
+    return CHAIN_ID_HEX === NETWORKS.mainnet.chainIdHex ? NETWORKS.mainnet.id : NETWORKS.testnet.id;
+  }
+  function note(el, text, cls) { el.textContent = text; el.className = 'msg-line' + (cls ? ' ' + cls : ''); }
+  function setBusy(button, busy, label) {
+    if (busy) {
+      if (!button.dataset.originalLabel) button.dataset.originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = label || 'Working…';
+    } else {
+      button.disabled = false;
+      if (button.dataset.originalLabel) button.textContent = button.dataset.originalLabel;
+    }
+  }
+  function showTxLink(el, hash) {
+    el.href = window.LEGACY_VAULT_CONFIG.EXPLORER_TX_BASE + hash;
+    el.textContent = 'view transaction';
+  }
+
+  // Personalize with whoever sent the link, without implying we can verify
+  // the claim — this is informational framing, not proof of anything.
+  const fromParam = new URLSearchParams(window.location.search).get('from');
+  if (fromParam && ethers.isAddress(fromParam)) {
+    $('fromLine').hidden = false;
+    $('fromLine').textContent = `Someone using Legacy Vault (${fromParam.slice(0, 6)}…${fromParam.slice(-4)}) sent you this link.`;
+  }
+
+  window.addEventListener('legacyvault:appkit-ready', () => {
+    document.getElementById('walletCompact').classList.add('is-ready');
+  });
+  window.addEventListener('legacyvault:appkit-error', () => {
+    $('walletSkeleton').textContent = 'Wallet unavailable';
+  });
+
+  // Captured before any registration transaction, so the new key's version
+  // number is known deterministically (keys are 0-indexed and append-only —
+  // if this address has N keys now, a new one becomes version N). Re-reading
+  // the count *after* sending the transaction would be racy: a read-only
+  // provider can lag behind the write for a moment and still report the
+  // old count, saving the backup under the wrong version number.
+  let nextKeyVersion = 0;
+
+  async function checkExistingRegistration(address) {
+    try {
+      const count = await getReadContract().beneficiaryKeyCount(address);
+      nextKeyVersion = Number(count);
+      if (count > 0n) {
+        const [, version] = await getReadContract().currentBeneficiaryKey(address);
+        $('existingVersion').textContent = String(version);
+        $('introDoc').hidden = true;
+        $('alreadyRegisteredDoc').hidden = false;
+        $('registerDoc').hidden = true;
+      } else {
+        $('introDoc').hidden = true;
+        $('alreadyRegisteredDoc').hidden = true;
+        $('registerDoc').hidden = false;
+        $('connectedAddr').textContent = address;
+      }
+    } catch (err) {
+      console.warn('Could not check existing registration:', err);
+      $('introDoc').hidden = true;
+      $('registerDoc').hidden = false;
+      $('connectedAddr').textContent = address;
+    }
+  }
+
+  window.__onAppKitAccount = async (account) => {
+    if (!account || !account.isConnected || !account.address) {
+      provider = signer = contract = myAddress = undefined;
+      $('introDoc').hidden = false;
+      $('alreadyRegisteredDoc').hidden = true;
+      $('registerDoc').hidden = true;
+      $('successDoc').hidden = true;
+      return;
+    }
+    try {
+      const eth = window.__legacyVaultAppKit.getWalletProvider();
+      if (!eth) throw new Error('Wallet provider not ready yet.');
+      provider = new ethers.BrowserProvider(eth);
+      signer = await provider.getSigner();
+      myAddress = await signer.getAddress();
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      $('successDoc').hidden = true;
+      await checkExistingRegistration(myAddress);
+    } catch (err) {
+      console.error(err);
+      note($('registerMsg'), 'Could not read the connected wallet — try reconnecting.', 'err');
+    }
+  };
+
+  $('showRotateBtn').addEventListener('click', () => {
+    $('alreadyRegisteredDoc').hidden = true;
+    $('registerDoc').hidden = false;
+    $('connectedAddr').textContent = myAddress;
+  });
+
+  async function registerBeneficiary() {
+    if (!contract || !myAddress) return;
+    setBusy($('registerBtn'), true, 'Generating your key…');
+    note($('registerMsg'), 'Generating your key…');
+    try {
+      const { publicKeyRaw, privateKeyJwk } = await window.BeneficiaryCrypto.generateKeypair();
+      setBusy($('registerBtn'), true, 'Confirm in your wallet…');
+      note($('registerMsg'), 'Confirm in your wallet…');
+      const tx = await contract.registerAsBeneficiary(publicKeyRaw);
+      setBusy($('registerBtn'), true, 'Publishing…');
+      note($('registerMsg'), 'Publishing…');
+      await tx.wait();
+
+      const version = nextKeyVersion;
+      window.BeneficiaryCrypto.savePrivateKey(getActiveChainId(), myAddress, version, privateKeyJwk);
+
+      note($('registerMsg'), 'Registered.', 'ok');
+      showTxLink($('registerTxLink'), tx.hash);
+      $('registerDoc').hidden = true;
+      $('successDoc').hidden = false;
+      const backupText = JSON.stringify({
+        network: window.LEGACY_VAULT_CONFIG.NETWORK_NAME,
+        address: myAddress,
+        version,
+        key: privateKeyJwk
+      }, null, 2);
+      $('keyBackupText').value = backupText;
+    } catch (err) {
+      console.error(err);
+      note($('registerMsg'), err.shortMessage || err.reason || 'Something went wrong — try again.', 'err');
+    } finally {
+      setBusy($('registerBtn'), false);
+    }
+  }
+
+  $('registerBtn').addEventListener('click', registerBeneficiary);
+
+  $('downloadKeyBtn').addEventListener('click', () => {
+    const blob = new Blob([$('keyBackupText').value], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `legacy-vault-key-${myAddress ? myAddress.slice(0, 8) : 'backup'}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // ---- footer / network badge, same convention as app.html ----
+  $('networkBadge').textContent = window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+</script>
+</body>
+</html>

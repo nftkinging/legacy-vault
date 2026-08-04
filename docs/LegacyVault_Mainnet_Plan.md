@@ -299,6 +299,51 @@ accepted in writing with a rationale.
         declined" still happens with that sequence present in the log, the pairing
         cleanup isn't the actual cause and the log's exact sequence at the moment of
         failure is what's needed next.
+11. **Beneficiary registration built end-to-end (2026-07-31):** closes out
+    `docs/BATCH_4_DESIGN_BRIEF.md`'s carry-forward items 1 and 2, plus the
+    `register.html` landing page called for separately. Scheme is ECIES over
+    P-256 (WebCrypto native, no external library) — `beneficiary-crypto.js`,
+    shared by `app.html` and `register.html`. The beneficiary's private key
+    never leaves their device except as a backup file they explicitly save;
+    it's namespaced in localStorage by chain + address + key version, so
+    testnet/mainnet and key rotation never collide.
+    - **Create-vault flow:** typing a beneficiary address debounce-checks
+      `beneficiaryKeyCount` and either shows a green "registered" state
+      (passphrase field hidden, letter encrypted straight to their key) or a
+      prominent warning with a one-click "copy registration link" — no
+      hardcoded owner/beneficiary assumptions, just `register.html?from=<owner>`
+      for personalization.
+    - **Late registration:** the owner's standing-vault view now separately
+      checks whether the *current* beneficiary has registered a key *since*
+      the vault was sealed with a passphrase, and offers a re-encrypt flow
+      (decrypt with the passphrase client-side, re-encrypt to the registered
+      key, `updateMessage`) — the owner never has to retype the letter.
+    - **Claim flow:** detects the ciphertext format byte and, for
+      registered-key letters, auto-decrypts from a locally-saved key or
+      offers to import a saved backup file (for claiming from a different
+      device than the one that registered).
+    - **register.html:** written for the non-technical, possibly-grieving
+      persona explicitly — plain language throughout, no unexplained jargon,
+      upfront about the network fee and about what's lost if the backup file
+      is lost (the letter, never the funds), an already-registered state that
+      doesn't push accidental re-registration, and an FAQ addressing the
+      likely first fears ("is this a scam," "do I need to do this right
+      now").
+    - Verified via Playwright end-to-end across both pages in one shared
+      browser context: register on `register.html` -> seal a vault on
+      `app.html` (owner side correctly detects the registration and skips
+      the passphrase) -> claim on `app.html` (beneficiary side finds the
+      saved key with no import needed and decrypts to the exact original
+      text). Also caught and fixed a real bug in the process: computing the
+      new key's version number via a post-transaction re-read of
+      `beneficiaryKeyCount` was racy (a read-only provider can lag behind
+      the write and still report the old count) — fixed to use the
+      pre-transaction count instead, which is deterministic since keys are
+      0-indexed and append-only.
+    - Not done in this pass (out of scope for this request, still open):
+      carry-forward items 3–5 from the original brief — inbox-harassment
+      mitigation, the metadata-leak disclosure, and the locked-minimum
+      disclosure.
 
 **Exit criterion:** clean end-to-end runs, no critical feedback outstanding.
 

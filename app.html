@@ -81,6 +81,62 @@
     text-underline-offset: 2px;
   }
 
+  .beneficiary-status {
+    margin: var(--space-2) 0 0; padding: var(--space-3) var(--space-4);
+    border-radius: 2px; font-family: var(--font-data); font-size: var(--text-xs);
+    line-height: 1.6;
+  }
+  .beneficiary-status.is-checking { padding: 0; color: var(--muted); background: none; }
+  .beneficiary-status.is-registered {
+    background: var(--parchment-2); color: var(--ok);
+    border: 1px solid var(--ok);
+  }
+  .beneficiary-status.is-warning { background: var(--wax-deep); color: var(--parchment-2); }
+  .beneficiary-status .status-eyebrow {
+    display: block; text-transform: uppercase; letter-spacing: 0.14em;
+    font-size: 10px; margin-bottom: var(--space-2); opacity: 0.85;
+  }
+  .beneficiary-status .link-row {
+    display: flex; align-items: center; gap: var(--space-2);
+    margin-top: var(--space-3); flex-wrap: wrap;
+  }
+  .beneficiary-status .link-row input {
+    flex: 1; min-width: 160px; background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.3); color: inherit;
+    font-family: var(--font-data); font-size: var(--text-xs);
+    padding: var(--space-2) var(--space-3); border-radius: 2px;
+  }
+  .beneficiary-status .link-row button {
+    background: none; border: 1px solid rgba(255,255,255,0.45); color: inherit;
+    font-family: var(--font-data); font-size: var(--text-xs); text-transform: none;
+    padding: var(--space-2) var(--space-3); border-radius: 2px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .beneficiary-status .link-row button:hover { background: rgba(255,255,255,0.12); }
+  .beneficiary-status .link-row button:focus-visible,
+  .beneficiary-status .link-row input:focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
+  /* is-registered sits on the light parchment background, not the dark
+     wax-deep one the rgba(255,255,255,...) borders above were tuned for —
+     those would be nearly invisible here. */
+  .beneficiary-status.is-registered .link-row input,
+  .beneficiary-status.is-registered .link-row button {
+    border-color: var(--ok); color: var(--ink); background: rgba(0,0,0,0.03);
+  }
+  .beneficiary-status.is-registered .link-row button:hover { background: rgba(0,0,0,0.08); }
+
+  #importKeyRow { margin-top: var(--space-3); }
+  #importKeyInput {
+    display: block; margin-top: var(--space-2);
+    font-family: var(--font-data); font-size: var(--text-xs); color: var(--text);
+  }
+  #importKeyInput::file-selector-button {
+    font-family: var(--font-data); font-size: var(--text-xs); text-transform: uppercase;
+    letter-spacing: 0.14em; cursor: pointer; border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-4); margin-right: var(--space-3);
+    background: transparent; color: var(--muted); border: 1px solid var(--muted);
+  }
+  #importKeyInput::file-selector-button:hover { color: var(--ink); border-color: var(--ink); }
+
   .debug-log-toggle {
     background: none; border: none; padding: 0; cursor: pointer;
     color: var(--muted); font-family: var(--font-data); font-size: var(--text-xs);
@@ -299,6 +355,7 @@
       <label for="benInput">Beneficiary address</label>
       <input id="benInput" placeholder="0x..." autocomplete="off" />
       <div class="field-error-text" id="benError" hidden></div>
+      <div class="beneficiary-status" id="beneficiaryStatus" hidden></div>
 
       <label for="amtInput">BOT to lock away</label>
       <input id="amtInput" type="number" min="0" step="0.001" placeholder="0.1" />
@@ -332,10 +389,12 @@
       <textarea id="msgInput" placeholder="If you are reading this, I have gone quiet..."></textarea>
       <div class="field-hint char-counter" id="msgCounter">0 / 4096 bytes once encrypted</div>
 
-      <label for="passInput">Seal passphrase</label>
-      <input id="passInput" type="password" placeholder="a phrase only your beneficiary will know" autocomplete="off" />
-      <div class="field-hint">
-        Encrypted client-side before it ever reaches the chain. Share this passphrase with your beneficiary some other way — lose it and the letter is lost, even though the funds remain claimable.
+      <div id="passphraseGroup">
+        <label for="passInput">Seal passphrase</label>
+        <input id="passInput" type="password" placeholder="a phrase only your beneficiary will know" autocomplete="off" />
+        <div class="field-hint">
+          Encrypted client-side before it ever reaches the chain. Share this passphrase with your beneficiary some other way — lose it and the letter is lost, even though the funds remain claimable.
+        </div>
       </div>
 
       <div class="actions">
@@ -364,6 +423,15 @@
         <li><span class="k">Last check-in</span><span class="v" id="fLastCheckIn">—</span></li>
         <li><span class="k">Allowed silence</span><span class="v" id="fInterval">—</span></li>
       </ul>
+
+      <div class="beneficiary-status is-registered" id="reencryptPrompt" hidden>
+        <span class="status-eyebrow">Your beneficiary has since registered</span>
+        <span>This letter is still locked with a passphrase. Re-encrypt it to their registered key so they won't need one at all.</span>
+        <div class="link-row">
+          <input id="reencryptPassInput" type="password" placeholder="Enter your seal passphrase" autocomplete="off" />
+          <button type="button" id="reencryptBtn">Re-encrypt now</button>
+        </div>
+      </div>
 
       <div class="actions">
         <button class="btn-wax" id="checkInBtn">I'm still here</button>
@@ -446,9 +514,18 @@
         </div>
 
         <div class="inline-form" id="decryptRow" style="display:none; border-top:none; margin-top:var(--space-4); padding-top:0;">
-          <div class="inline">
+          <div class="inline" id="passphraseDecryptRow" style="display:none;">
             <input id="passphraseInput" type="password" placeholder="Enter the passphrase to reveal" autocomplete="off" />
             <button class="btn-quiet" id="revealBtn">Reveal</button>
+          </div>
+          <div class="inline" id="registeredDecryptRow" style="display:none;">
+            <button class="btn-quiet" id="revealRegisteredBtn">Reveal with your registered key</button>
+          </div>
+          <div id="importKeyRow" style="display:none;">
+            <div class="field-hint">
+              This letter is encrypted to your registered key, and this device doesn't have it saved. If you registered on a different device, import the backup file you saved then.
+            </div>
+            <input type="file" id="importKeyInput" accept="application/json" />
           </div>
         </div>
 
@@ -465,7 +542,7 @@
     <span class="network-badge" id="networkBadge">BOT Chain Testnet</span>
     <span id="contractAddr">contract: —</span>
     <a id="explorerLink" href="#" target="_blank" rel="noopener">view contract on explorer</a>
-    <button type="button" id="debugLogToggle" class="debug-log-toggle">debug log</button>
+    <button type="button" id="debugLogToggle" class="debug-log-toggle" hidden>debug log</button>
   </footer>
 
 </div>
@@ -482,6 +559,7 @@
 </div>
 
 <script src="config.js"></script>
+<script src="beneficiary-crypto.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
 <script type="module">
   // Wallet connection via Reown AppKit — <appkit-button> in the header IS
@@ -629,8 +707,13 @@
   // ---- wallet connection debug log ----
   // "Connection declined" only reproduces on a real phone, where there's
   // no attached debugger. This gives two ways to see it: the browser
-  // console (Safari remote debugging from a Mac), and an on-page panel
-  // (tap "debug log" in the footer) for when a Mac isn't available.
+  // console (Safari remote debugging from a Mac — always logs, no setup
+  // needed), and an on-page panel for when a Mac isn't available. The
+  // panel's footer link stays hidden from ordinary visitors — append
+  // ?debug=1 to the URL to reveal it.
+  if (new URLSearchParams(window.location.search).get('debug') === '1') {
+    document.getElementById('debugLogToggle').hidden = false;
+  }
   const walletDebugLog = [];
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -809,7 +892,9 @@
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
   let ownerDeadline = null, ownerTotalInterval = null, claimDeadline = null, claimTargetOwner = null, claimCiphertext = null;
+  let claimLocalPrivateKey = null; // JWK, once found in localStorage or imported from a backup file
   let lastOwnerSealState = null, lastClaimSealState = null;
+  let ownerCiphertext = null, ownerReencryptTarget = null; // { pubKeyRaw, version } once a late registration is detected
 
   // Fallback constants match contracts/LegacyVault.sol exactly, used only if
   // the live read (below) fails — e.g. wrong network, RPC hiccup. Real
@@ -990,15 +1075,18 @@
     return raw || 'Something went wrong. Please try again.';
   }
 
-  // ---------- letter encryption (AES-GCM + PBKDF2), raw bytes ----------
-  // message is `bytes` on-chain now, not base64 string. Layout: [1-byte
-  // format version][16-byte salt][12-byte iv][ciphertext]. Version 1 =
-  // passphrase-derived AES-GCM/PBKDF2. (Registered-key encryption is
-  // supported by the contract via registerAsBeneficiary but has no frontend
-  // yet — out of scope for this pass.)
+  // ---------- letter encryption ----------
+  // message is `bytes` on-chain, not base64 string. Two formats share the
+  // same address space, distinguished by the first byte:
+  //   1 = passphrase-derived AES-GCM/PBKDF2 (this section)
+  //   2 = ECIES to a registered beneficiary public key (beneficiary-crypto.js)
+  // Passphrase is the fallback path — used only when the named beneficiary
+  // hasn't registered a key. See checkBeneficiaryRegistration() below for
+  // which one a given vault creation actually uses.
   const FORMAT_VERSION = 1;
   const PBKDF2_ITERATIONS = 200000;
   const ENC_OVERHEAD_BYTES = 1 + 16 + 12 + 16; // version + salt + iv + AES-GCM auth tag
+  const REGISTERED_ENC_OVERHEAD_BYTES = 1 + 4 + 65 + 12 + 16; // format + key version + ephemeral pubkey + iv + AES-GCM auth tag
 
   async function deriveKey(passphrase, salt) {
     const keyMaterial = await crypto.subtle.importKey(
@@ -1032,14 +1120,171 @@
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
     return new TextDecoder().decode(plaintext);
   }
-  function isEncrypted(bytes) { return bytes && bytes.length > 0 && bytes[0] === FORMAT_VERSION; }
+  // Recognizes either encrypted format (passphrase=1, registered-key=2) —
+  // "is this locked at all," not "locked which way." Anything else
+  // (including legacy pre-encryption plaintext vaults) is not encrypted.
+  function isEncrypted(bytes) {
+    return bytes && bytes.length > 0 && (bytes[0] === FORMAT_VERSION || bytes[0] === window.BeneficiaryCrypto.FORMAT_VERSION_REGISTERED);
+  }
 
   function updateMsgCounter() {
-    const bytes = new TextEncoder().encode($('msgInput').value).length + ENC_OVERHEAD_BYTES;
+    const overhead = benRegistration.registered ? REGISTERED_ENC_OVERHEAD_BYTES : ENC_OVERHEAD_BYTES;
+    const bytes = new TextEncoder().encode($('msgInput').value).length + overhead;
     const max = Number(constraints.maxMessageLength);
     const el = $('msgCounter');
     el.textContent = `${bytes} / ${max} bytes once encrypted`;
     el.classList.toggle('over', bytes > max);
+  }
+
+  // ---------- beneficiary registration lookup ----------
+  // Registration is the encouraged path (Batch 2's decided hybrid model):
+  // if the named address has published a key, the letter is encrypted
+  // straight to it and there's no passphrase for the owner to somehow
+  // deliver before going silent. If not, the UI needs to say so loudly —
+  // the passphrase fallback is structurally fragile (the owner has to
+  // hand it over in advance, precisely when they may become unreachable)
+  // — and offer a one-click way to send the beneficiary a registration
+  // link instead of leaving that on the owner to explain.
+  let benRegistration = { checked: false, registered: false, pubKeyRaw: null, version: null };
+  let benCheckToken = 0;
+
+  async function checkBeneficiaryRegistration(address) {
+    const token = ++benCheckToken;
+    const statusEl = $('beneficiaryStatus');
+    if (!ethers.isAddress(address)) {
+      benRegistration = { checked: false, registered: false, pubKeyRaw: null, version: null };
+      statusEl.hidden = true;
+      $('passphraseGroup').hidden = false;
+      updateMsgCounter();
+      return;
+    }
+    statusEl.hidden = false;
+    statusEl.className = 'beneficiary-status is-checking';
+    statusEl.textContent = 'Checking whether this address has registered…';
+    try {
+      const count = await getReadContract().beneficiaryKeyCount(address);
+      if (token !== benCheckToken) return; // a newer address was typed while this was in flight
+      if (count > 0n) {
+        const [key, version] = await getReadContract().currentBeneficiaryKey(address);
+        if (token !== benCheckToken) return;
+        benRegistration = { checked: true, registered: true, pubKeyRaw: ethers.getBytes(key), version: Number(version) };
+        renderBeneficiaryStatus();
+      } else {
+        benRegistration = { checked: true, registered: false, pubKeyRaw: null, version: null };
+        renderBeneficiaryStatus();
+      }
+    } catch (err) {
+      if (token !== benCheckToken) return;
+      console.warn('Could not check beneficiary registration:', err);
+      benRegistration = { checked: false, registered: false, pubKeyRaw: null, version: null };
+      statusEl.hidden = true;
+      $('passphraseGroup').hidden = false;
+    }
+    updateMsgCounter();
+  }
+
+  function registrationLink() {
+    const url = new URL('register.html', window.location.href);
+    if (myAddress) url.searchParams.set('from', myAddress);
+    return url.toString();
+  }
+
+  function renderBeneficiaryStatus() {
+    const statusEl = $('beneficiaryStatus');
+    if (benRegistration.registered) {
+      $('passphraseGroup').hidden = true;
+      statusEl.className = 'beneficiary-status is-registered';
+      statusEl.innerHTML = '';
+      const eyebrow = document.createElement('span');
+      eyebrow.className = 'status-eyebrow';
+      eyebrow.textContent = 'Registered beneficiary';
+      const body = document.createElement('span');
+      body.textContent = 'This address has registered a key — the letter will be encrypted straight to it. No passphrase to lose or deliver.';
+      statusEl.append(eyebrow, body);
+    } else {
+      $('passphraseGroup').hidden = false;
+      statusEl.className = 'beneficiary-status is-warning';
+      statusEl.innerHTML = '';
+      const eyebrow = document.createElement('span');
+      eyebrow.className = 'status-eyebrow';
+      eyebrow.textContent = 'Not registered';
+      const body = document.createElement('span');
+      body.textContent = "This address hasn't registered a key. The letter will be locked with the passphrase below instead — you have to get that to them yourself, and if you go silent before they have it, they can still claim the funds but will never read the letter. Sending them the link below first removes that risk entirely.";
+      const linkRow = document.createElement('div');
+      linkRow.className = 'link-row';
+      const linkInput = document.createElement('input');
+      linkInput.type = 'text';
+      linkInput.readOnly = true;
+      linkInput.value = registrationLink();
+      linkInput.setAttribute('aria-label', 'Registration link to send your beneficiary');
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.textContent = 'Copy link';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(linkInput.value);
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 2000);
+        } catch {
+          linkInput.select();
+        }
+      });
+      linkRow.append(linkInput, copyBtn);
+      statusEl.append(eyebrow, body, linkRow);
+    }
+  }
+
+  // ---------- late registration: beneficiary registered after the vault
+  // was already sealed with a passphrase ----------
+  async function checkLateRegistration(beneficiary) {
+    const promptEl = $('reencryptPrompt');
+    ownerReencryptTarget = null;
+    promptEl.hidden = true;
+    if (!ownerCiphertext || ownerCiphertext.length === 0 || ownerCiphertext[0] !== FORMAT_VERSION) return; // already registered-key, or no letter at all
+    try {
+      const count = await getReadContract().beneficiaryKeyCount(beneficiary);
+      if (count === 0n) return;
+      const [key, version] = await getReadContract().currentBeneficiaryKey(beneficiary);
+      ownerReencryptTarget = { pubKeyRaw: ethers.getBytes(key), version: Number(version) };
+      promptEl.hidden = false;
+    } catch (err) {
+      console.warn('Could not check for late beneficiary registration:', err);
+    }
+  }
+
+  async function reencryptForRegisteredBeneficiary() {
+    if (!ownerReencryptTarget || !ownerCiphertext) return;
+    const pass = $('reencryptPassInput').value;
+    if (!pass) { note($('ownerMsg'), 'Enter your seal passphrase to re-encrypt.', 'err'); return; }
+    setBusy($('reencryptBtn'), true, 'Decrypting…');
+    hideTxLink($('ownerTxLink'));
+
+    let plaintext;
+    try {
+      plaintext = await decryptMessage(ownerCiphertext, pass);
+    } catch {
+      note($('ownerMsg'), 'Wrong passphrase — could not decrypt the current letter.', 'err');
+      setBusy($('reencryptBtn'), false);
+      return;
+    }
+
+    try {
+      setBusy($('reencryptBtn'), true, 'Encrypting…');
+      const reencrypted = await window.BeneficiaryCrypto.encryptFor(plaintext, ownerReencryptTarget.pubKeyRaw, ownerReencryptTarget.version);
+      setBusy($('reencryptBtn'), true, 'Confirm in wallet…');
+      note($('ownerMsg'), 'Confirm in your wallet…');
+      const tx = await contract.updateMessage(reencrypted);
+      setBusy($('reencryptBtn'), true, 'Sealing…');
+      note($('ownerMsg'), 'Re-sealing…');
+      await tx.wait();
+      note($('ownerMsg'), "Re-encrypted. Your beneficiary won't need the passphrase anymore.", 'ok');
+      showTxLink($('ownerTxLink'), tx.hash);
+      $('reencryptPassInput').value = '';
+      await refreshOwnerVault();
+    } catch (err) {
+      console.error(err);
+      note($('ownerMsg'), friendlyError(err), 'err');
+    } finally { setBusy($('reencryptBtn'), false); }
   }
 
   // ---------- custom select: keyboard nav (arrows/enter/escape) + type-ahead ----------
@@ -1211,11 +1456,17 @@
       const secondsLeft = ownerDeadline - Math.floor(Date.now() / 1000);
       lastOwnerSealState = null; // force a render even if the state string repeats after a reconnect
       updateSeal('ownerSeal', 'ownerSealStage', sealStateFor(v.claimable, secondsLeft, ownerTotalInterval), { get value() { return lastOwnerSealState; }, set value(s) { lastOwnerSealState = s; } });
+
+      ownerCiphertext = ethers.getBytes(v.message);
+      await checkLateRegistration(v.beneficiary);
     } catch {
       $('createDoc').style.display = 'block';
       $('vaultDoc').style.display = 'none';
       ownerDeadline = null;
       ownerTotalInterval = null;
+      ownerCiphertext = null;
+      ownerReencryptTarget = null;
+      $('reencryptPrompt').hidden = true;
     }
   }
 
@@ -1244,11 +1495,12 @@
     fieldError($('intervalError'), !daysOk ? `Enter a number of days between ${minDays} and ${maxDays}.` : '');
     if (!daysOk) ok = false;
 
-    const encodedLen = new TextEncoder().encode(msg).length + ENC_OVERHEAD_BYTES;
+    const overhead = benRegistration.registered ? REGISTERED_ENC_OVERHEAD_BYTES : ENC_OVERHEAD_BYTES;
+    const encodedLen = new TextEncoder().encode(msg).length + overhead;
     const msgOk = msg.length > 0 && encodedLen <= Number(constraints.maxMessageLength);
     if (!msgOk) ok = false;
 
-    if (!pass) ok = false;
+    if (!benRegistration.registered && !pass) ok = false;
 
     return ok;
   }
@@ -1259,12 +1511,14 @@
     const days = $('intervalDays').value;
     const msg = $('msgInput').value.trim();
     const pass = $('passInput').value;
+    const useRegisteredKey = benRegistration.registered && benRegistration.pubKeyRaw;
 
     if (!validateCreateForm()) {
-      const encodedLen = new TextEncoder().encode(msg).length + ENC_OVERHEAD_BYTES;
+      const overhead = benRegistration.registered ? REGISTERED_ENC_OVERHEAD_BYTES : ENC_OVERHEAD_BYTES;
+      const encodedLen = new TextEncoder().encode(msg).length + overhead;
       if (!msg) note($('createMsg'), 'Write the letter — it is the point.', 'err');
       else if (encodedLen > Number(constraints.maxMessageLength)) note($('createMsg'), 'That letter is too long once encrypted — trim it.', 'err');
-      else if (!pass) note($('createMsg'), 'Set a seal passphrase to encrypt the letter.', 'err');
+      else if (!useRegisteredKey && !pass) note($('createMsg'), 'Set a seal passphrase to encrypt the letter.', 'err');
       else note($('createMsg'), 'Fix the highlighted fields above.', 'err');
       return;
     }
@@ -1274,7 +1528,9 @@
     setBusy($('createBtn'), true, 'Encrypting…');
     note($('createMsg'), 'Encrypting the letter…');
     try {
-      const encrypted = await encryptMessage(msg, pass);
+      const encrypted = useRegisteredKey
+        ? await window.BeneficiaryCrypto.encryptFor(msg, benRegistration.pubKeyRaw, benRegistration.version)
+        : await encryptMessage(msg, pass);
       setBusy($('createBtn'), true, 'Confirm in wallet…');
       note($('createMsg'), 'Confirm in your wallet…');
       const tx = await contract.createVault(ben, interval, encrypted, { value: ethers.parseEther(amt) });
@@ -1425,13 +1681,33 @@
       const encrypted = isEncrypted(msgBytes);
       $('passphraseInput').value = '';
       $('decryptRow').style.display = 'none';
+      $('passphraseDecryptRow').style.display = 'none';
+      $('registeredDecryptRow').style.display = 'none';
+      $('importKeyRow').style.display = 'none';
+      claimLocalPrivateKey = null;
       if (v.claimable) {
         letter.classList.remove('sealed');
         $('sealedNote').style.display = 'none';
         if (encrypted) {
           claimCiphertext = msgBytes;
-          letter.textContent = 'Encrypted — enter the passphrase below to reveal.';
           $('decryptRow').style.display = 'block';
+          if (window.BeneficiaryCrypto.isRegisteredKeyPayload(msgBytes)) {
+            const parsed = window.BeneficiaryCrypto.parsePayload(msgBytes);
+            const localKey = myAddress
+              ? window.BeneficiaryCrypto.loadPrivateKey(getActiveNetworkConfig().id, myAddress, parsed.keyVersion)
+              : null;
+            if (localKey) {
+              claimLocalPrivateKey = localKey;
+              letter.textContent = 'Encrypted to your registered key — reveal below.';
+              $('registeredDecryptRow').style.display = 'flex';
+            } else {
+              letter.textContent = 'Encrypted to your registered key.';
+              $('importKeyRow').style.display = 'block';
+            }
+          } else {
+            letter.textContent = 'Encrypted — enter the passphrase below to reveal.';
+            $('passphraseDecryptRow').style.display = 'flex';
+          }
         } else if (msgBytes.length > 0) {
           letter.textContent = ethers.toUtf8String(msgBytes);
         } else {
@@ -1466,6 +1742,43 @@
       note($('claimMsg'), 'Wrong passphrase — the letter could not be revealed.', 'err');
     } finally { setBusy($('revealBtn'), false); }
   }
+
+  async function revealLetterRegistered() {
+    if (!claimCiphertext || !claimLocalPrivateKey) return;
+    setBusy($('revealRegisteredBtn'), true, 'Revealing…');
+    try {
+      const plaintext = await window.BeneficiaryCrypto.decryptWith(claimCiphertext, claimLocalPrivateKey);
+      $('claimLetter').textContent = plaintext;
+      $('decryptRow').style.display = 'none';
+      note($('claimMsg'), 'Letter revealed.', 'ok');
+    } catch (err) {
+      console.error(err);
+      note($('claimMsg'), 'Could not decrypt with your saved key.', 'err');
+    } finally { setBusy($('revealRegisteredBtn'), false); }
+  }
+
+  // Only reached when the letter is encrypted to a registered key this
+  // device doesn't have saved — e.g. the beneficiary registered on their
+  // phone, and is claiming from a laptop. Importing here also saves the
+  // key to *this* device's localStorage, so it doesn't need re-importing
+  // next time.
+  $('importKeyInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file || !claimCiphertext) return;
+    try {
+      const jwk = JSON.parse(await file.text());
+      const parsed = window.BeneficiaryCrypto.parsePayload(claimCiphertext);
+      claimLocalPrivateKey = jwk;
+      if (myAddress) window.BeneficiaryCrypto.savePrivateKey(getActiveNetworkConfig().id, myAddress, parsed.keyVersion, jwk);
+      $('importKeyRow').style.display = 'none';
+      $('registeredDecryptRow').style.display = 'flex';
+      note($('claimMsg'), 'Key imported — tap Reveal to decrypt.', 'ok');
+    } catch (err) {
+      note($('claimMsg'), "That file doesn't look like a valid key backup.", 'err');
+    } finally {
+      e.target.value = '';
+    }
+  });
 
   async function doClaim() {
     if (!claimTargetOwner) return;
@@ -1525,6 +1838,7 @@
   });
   $('createBtn').addEventListener('click', createVault);
   $('checkInBtn').addEventListener('click', checkIn);
+  $('reencryptBtn').addEventListener('click', reencryptForRegisteredBeneficiary);
   $('depositToggleBtn').addEventListener('click', () => showOnlyInlineForm('depositForm'));
   $('withdrawToggleBtn').addEventListener('click', () => showOnlyInlineForm('withdrawForm'));
   $('closeToggleBtn').addEventListener('click', () => showOnlyInlineForm('closeForm'));
@@ -1535,6 +1849,11 @@
   $('withdrawConfirm').addEventListener('click', withdrawConfirm);
   $('closeConfirm').addEventListener('click', closeConfirm);
   $('msgInput').addEventListener('input', updateMsgCounter);
+  let benCheckDebounce = null;
+  $('benInput').addEventListener('input', () => {
+    clearTimeout(benCheckDebounce);
+    benCheckDebounce = setTimeout(() => checkBeneficiaryRegistration($('benInput').value.trim()), 500);
+  });
   $('findBtn').addEventListener('click', findMine);
   $('lookupBtn').addEventListener('click', () => {
     const a = $('ownerLookup').value.trim();
@@ -1543,6 +1862,7 @@
   });
   $('claimBtn').addEventListener('click', doClaim);
   $('revealBtn').addEventListener('click', revealLetter);
+  $('revealRegisteredBtn').addEventListener('click', revealLetterRegistered);
 
   initCustomSelect('presetSelect', 'presetTrigger', 'presetList', opt => {
     $('intervalDays').value = opt.dataset.days;
