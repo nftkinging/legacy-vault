@@ -2122,8 +2122,17 @@
         note($('claimMsg'), 'The owner is still answering. The letter stays sealed.', '');
       }
     } catch (err) {
+      // Was a hardcoded "No vault found at that address" for every failure
+      // here, which is right for the common case (getVault reverts "No such
+      // vault") but wrong and misleading for anything else — an unreachable
+      // RPC, a stale/mismatched contract, etc. would show "no vault" when
+      // the real problem is unrelated to whether one exists. friendlyError
+      // already maps "No such vault" to this exact same wording, so the
+      // common case reads identically; everything else now gets its real
+      // reason instead.
+      console.error(err);
       $('claimView').style.display = 'none';
-      note($('claimMsg'), 'No vault found at that address.', 'err');
+      note($('claimMsg'), friendlyError(err), 'err');
     }
   }
 
