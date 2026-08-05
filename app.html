@@ -78,14 +78,26 @@
   .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
 
   .direct-connect-pill {
-    display: inline-flex; align-items: center; gap: var(--space-2);
-    width: 116px; height: 40px; padding: 0 var(--space-3);
+    display: inline-flex; align-items: center; gap: var(--space-3);
+    min-width: 116px; max-width: 220px; height: 40px; padding: 0 var(--space-3);
     background: var(--wax); color: var(--parchment-2);
     border-radius: 2px; box-sizing: border-box;
-    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
+    font-family: var(--font-data); letter-spacing: 0.02em;
   }
   .direct-connect-pill[hidden] { display: none; }
-  .direct-connect-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Balance on top (the figure a user actually needs to see before
+     attempting a transaction — same reasoning as the claim-screen gas
+     warning), truncated address underneath, matching how AppKit's own
+     balance="show" button orders them. */
+  .direct-connect-info { display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.3; }
+  .direct-connect-balance {
+    font-size: var(--text-xs); font-weight: 600; font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .direct-connect-addr {
+    font-size: 10px; color: var(--gilt); opacity: 0.9;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .direct-connect-pill button {
     flex-shrink: 0; background: none; border: 1px solid rgba(255,255,255,0.5); color: inherit;
     font-family: var(--font-data); font-size: 10px; text-transform: none;
@@ -467,7 +479,10 @@
            has no way to reflect it; this is shown instead, never
            alongside. -->
       <div class="direct-connect-pill" id="directConnectPill" hidden>
-        <span id="directConnectAddr"></span>
+        <div class="direct-connect-info">
+          <span id="directConnectBalance" class="direct-connect-balance"></span>
+          <span id="directConnectAddr" class="direct-connect-addr"></span>
+        </div>
         <button type="button" id="directDisconnectBtn">Disconnect</button>
       </div>
     </div>
@@ -1650,6 +1665,7 @@
       noteTxSuccess($('ownerMsg'), "Re-encrypted. Your beneficiary won't need the passphrase anymore.");
       showTxLink($('ownerTxLink'), tx.hash);
       $('reencryptPassInput').value = '';
+      refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
       console.error(err);
@@ -1856,6 +1872,7 @@
       $('walletSkeleton').style.display = 'none';
       $('injectedConnectBtn').style.display = 'none';
       if (appKitBtn) appKitBtn.style.display = 'none';
+      refreshDirectConnectBalance(); // fire-and-forget; own errors are caught internally
     } else {
       pill.hidden = true;
       // Restore whichever button is the actual primary path for this
@@ -1864,6 +1881,25 @@
       $('walletSkeleton').style.display = hasInjected ? 'none' : '';
       $('injectedConnectBtn').style.display = hasInjected ? '' : 'none';
       if (appKitBtn) appKitBtn.style.display = hasInjected ? 'none' : '';
+    }
+  }
+
+  // <appkit-button balance="show"> used to show this for free; the
+  // direct-connect bypass has no equivalent, so this fills the gap.
+  // Beyond cosmetics — seeing you have gas before attempting a
+  // transaction is the same problem the claim-screen gas warning solves
+  // (checkClaimGasBalance), just for the owner-side actions too. Called
+  // after renderDirectConnectPill() (so it shows right after connecting)
+  // and again after every transaction that can change this wallet's own
+  // balance: seal, deposit, withdraw, close, claim (each pays gas; claim
+  // also receives funds).
+  async function refreshDirectConnectBalance() {
+    if (!usingDirectConnect || !myAddress || !provider) return;
+    try {
+      const balance = await provider.getBalance(myAddress);
+      $('directConnectBalance').textContent = `${Number(ethers.formatEther(balance)).toFixed(4)} BOT`;
+    } catch (err) {
+      console.warn('Could not refresh direct-connect balance:', err);
     }
   }
 
@@ -2126,6 +2162,21 @@
         window.__onAppKitAccount(window.__legacyVaultAppKit.getAccount());
       }
     });
+    // No accountsChanged listener existed at all before — switching
+    // accounts in the extension left the pill (address, balance) showing
+    // the previous account indefinitely for a direct-connect session.
+    // AppKit-managed sessions handle their own account switching
+    // internally, so this only acts when we're the ones who own the
+    // connection.
+    window.ethereum.on('accountsChanged', (accounts) => {
+      console.log('[LegacyVault] accountsChanged event fired —', accounts);
+      if (!usingDirectConnect) return;
+      if (!accounts || accounts.length === 0) {
+        clearConnectionState();
+      } else {
+        connectWithEth(window.ethereum).then(renderDirectConnectPill).catch(handleConnectError);
+      }
+    });
   }
 
   function getReadContract() {
@@ -2236,6 +2287,7 @@
       await tx.wait();
       noteTxSuccess($('createMsg'), 'Vault sealed. Keep checking in.');
       showTxLink($('createTxLink'), tx.hash);
+      refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
       console.error(err);
@@ -2253,6 +2305,7 @@
       await tx.wait();
       noteTxSuccess($('ownerMsg'), 'Proof of life recorded.');
       showTxLink($('ownerTxLink'), tx.hash);
+      refreshDirectConnectBalance();
       await refreshOwnerVault();
       setTimeout(refreshOwnerVault, 3000);
       setTimeout(refreshOwnerVault, 8000);
@@ -2283,6 +2336,7 @@
       showTxLink($('ownerTxLink'), tx.hash);
       $('depositForm').hidden = true;
       $('depositAmt').value = '';
+      refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
       fieldError($('depositError'), friendlyError(err));
@@ -2304,6 +2358,7 @@
       showTxLink($('ownerTxLink'), tx.hash);
       $('withdrawForm').hidden = true;
       $('withdrawAmt').value = '';
+      refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
       fieldError($('withdrawError'), friendlyError(err));
@@ -2333,6 +2388,7 @@
       // readable by anyone holding the (unchanged) passphrase regardless
       // of who's named on-chain. This is the one case worth a loud, exact
       // warning rather than a generic success message.
+      refreshDirectConnectBalance();
       if (ownerCiphertext && ownerCiphertext[0] === window.BeneficiaryCrypto.FORMAT_VERSION_REGISTERED) {
         note($('ownerMsg'), 'Beneficiary changed. But the letter was sealed to the previous beneficiary’s registered key — the new beneficiary cannot decrypt it. Use Close vault and start a new one if they need to read a letter.', 'err');
       } else {
@@ -2354,6 +2410,7 @@
       noteTxSuccess($('ownerMsg'), 'Vault closed. Full balance returned.');
       showTxLink($('ownerTxLink'), tx.hash);
       $('closeForm').hidden = true;
+      refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
       note($('ownerMsg'), friendlyError(err), 'err');
@@ -2577,6 +2634,7 @@
       await tx.wait();
       noteTxSuccess($('claimMsg'), 'Claimed. What was left is now yours.');
       showTxLink($('claimTxLink'), tx.hash);
+      refreshDirectConnectBalance();
       await loadClaimVault(claimTargetOwner);
     } catch (err) {
       console.error(err);
