@@ -63,7 +63,41 @@
   }
   appkit-button { opacity: 0; transition: opacity var(--duration-state) var(--ease); }
   .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
+
+  .direct-connect-pill {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    width: 116px; height: 40px; padding: 0 var(--space-3);
+    background: var(--wax); color: var(--parchment-2);
+    border-radius: 2px; box-sizing: border-box;
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
+  }
+  .direct-connect-pill[hidden] { display: none; }
+  .direct-connect-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .direct-connect-pill button {
+    flex-shrink: 0; background: none; border: 1px solid rgba(255,255,255,0.5); color: inherit;
+    font-family: var(--font-data); font-size: 10px; text-transform: none;
+    padding: 2px 6px; border-radius: 2px; cursor: pointer;
+  }
+  .direct-connect-pill button:hover { background: rgba(255,255,255,0.15); }
   .wallet-compact.is-ready appkit-button { opacity: 1; }
+
+  .local-dev-banner[hidden] { display: none; }
+  .local-dev-banner {
+    display: block; text-align: center;
+    background: var(--ink); color: var(--gilt);
+    border: 1px dashed var(--gilt-deep);
+    font-family: var(--font-data); font-size: var(--text-xs);
+    letter-spacing: 0.04em;
+    padding: var(--space-2) var(--space-4);
+    margin: 0 0 var(--space-6);
+    border-radius: 2px;
+  }
+
+  /* Shown under every transaction-confirmed success message — see
+     noteTxSuccess(). Deliberately quieter than the confirmation line
+     itself (muted, smaller) since it's a footnote for the rare case of
+     disagreement, not something that needs attention on every success. */
+  .tx-trust-note { display: block; color: var(--muted); font-size: 11px; margin-top: var(--space-1); }
 
   .wrong-network-banner[hidden] { display: none; }
   .wrong-network-banner {
@@ -234,24 +268,36 @@
   .seal-visual svg { display: block; width: 148px; height: 148px; }
   .seal-info { min-width: 0; }
   /* Gilt on parchment fails contrast for text (measured 2.11:1 — the brief
-     explicitly warns against exactly this). The countdown stays --ink for
-     legibility; the one gilt element on this view is the decorative rule
-     beneath it instead — a foil flourish, not text, so the text-contrast
-     rule doesn't apply and nothing is unreadable. */
-  .countdown {
+     explicitly warns against exactly this). Both stay --ink for legibility;
+     the one gilt element on this view is the decorative rule between them
+     instead — a foil flourish, not text, so the text-contrast rule doesn't
+     apply and nothing is unreadable.
+     The unlock date, not the raw countdown, is the primary figure here —
+     "unlocks at this fixed moment" is the fact that actually matters and
+     doesn't drift as you read it; the ticking countdown is corroborating
+     detail underneath, phrased against the vault's own allowed-silence
+     window (see ownerCountLabel/claimCountLabel in the script) so the two
+     numbers on this card visibly relate instead of reading as two
+     unconnected facts. */
+  .unlock-datetime {
     font-family: var(--font-display); font-weight: 600;
-    font-size: var(--text-5xl); line-height: 1;
-    letter-spacing: 0.01em; font-variant-numeric: tabular-nums;
+    font-size: var(--text-3xl); line-height: 1.15;
+    letter-spacing: 0.005em; text-wrap: balance;
     color: var(--text);
+  }
+  .countdown-rule { width: 56px; height: 2px; background: var(--gilt); margin: var(--space-3) 0 0; border: 0; }
+  .countdown {
+    font-family: var(--font-data); font-weight: 600;
+    font-size: var(--text-xl); line-height: 1.3;
+    letter-spacing: 0.01em; font-variant-numeric: tabular-nums;
+    color: var(--text); margin-top: var(--space-2);
   }
   .countdown.warn { color: var(--wax-deep); }
   .countdown.due { color: var(--wax); }
-  .countdown-rule { width: 56px; height: 2px; background: var(--gilt); margin: var(--space-2) 0 0; border: 0; }
   .count-label {
     font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.2em;
-    text-transform: uppercase; color: var(--muted); margin-top: var(--space-2); max-width: 26ch;
+    text-transform: uppercase; color: var(--muted); margin-top: var(--space-1); max-width: 32ch;
   }
-  .unlock-datetime { font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-1); }
 
   /* Ledger strip: a distinct, slightly recessed zone for the supporting
      facts, so they read as secondary detail beneath the seal's hierarchy
@@ -294,8 +340,15 @@
   .beneficiary-list button { width: 100%; margin-bottom: var(--space-2); text-transform: none; letter-spacing: 0.03em; }
 
   /* This app's network badge stays muted, not gilt — the countdown holds
-     the one-gilt-per-view budget whenever a vault is on screen. */
+     the one-gilt-per-view budget whenever a vault is on screen. LOCAL is the
+     deliberate exception: it needs to read as unmistakably different from
+     every other state (testnet, mainnet, wrong-network) so a locally-running
+     session is never confused for one touching a real deployed contract. */
   footer .network-badge { border-color: var(--muted); color: var(--muted); }
+  footer .network-badge.is-local {
+    background: var(--ink); color: var(--gilt); border-color: var(--gilt-deep);
+    font-weight: 600;
+  }
   footer {
     display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); align-items: center; justify-content: center;
     font-family: var(--font-data); font-size: var(--text-xs); color: var(--muted); position: relative; z-index: 1;
@@ -307,7 +360,7 @@
     .doc { padding: var(--space-6) var(--space-4); }
     .seal-stage { flex-direction: column; text-align: center; gap: var(--space-4); }
     .seal-visual svg { width: 116px; height: 116px; }
-    .countdown { font-size: var(--text-4xl); }
+    .unlock-datetime { font-size: var(--text-2xl); }
     .countdown-rule { margin-inline: auto; }
     .count-label { max-width: none; }
     .interval-control { flex-direction: column; }
@@ -333,11 +386,35 @@
     <div class="wallet-compact" id="walletCompact">
       <button type="button" class="wallet-skeleton" id="walletSkeleton" disabled aria-hidden="true">Connect Wallet</button>
       <appkit-button balance="show"></appkit-button>
+      <!-- connectDirect() bypasses AppKit entirely, so <appkit-button> has
+           no way to know that connection happened — it would otherwise
+           keep showing "Connect Wallet" forever despite a working
+           connection. This is our own minimal connected-state UI for that
+           path specifically, shown instead of (never alongside)
+           <appkit-button>. -->
+      <div class="direct-connect-pill" id="directConnectPill" hidden>
+        <span id="directConnectAddr"></span>
+        <button type="button" id="directDisconnectBtn">Disconnect</button>
+      </div>
     </div>
   </header>
 
+  <div id="localDevBanner" class="local-dev-banner" hidden>
+    LOCAL DEV — Hardhat node, chain 31337. Not real funds, not the deployed testnet/mainnet contract.
+  </div>
+
+  <!-- Shown whenever config.local.js is present, independent of whether a
+       connection has succeeded yet — this is the escape hatch for when
+       AppKit's own connect flow won't land on the wallet's actual chain.
+       connectDirect() talks to window.ethereum with zero AppKit
+       involvement: no wallet_switchEthereumChain, no cached session. -->
+  <div id="directConnectRow" class="local-dev-banner" hidden>
+    Local network detected.
+    <button type="button" id="directConnectBtn" class="wrong-network-switch">Connect directly (bypass AppKit)</button>
+  </div>
+
   <div id="wrongNetworkBanner" class="wrong-network-banner" hidden role="alert">
-    <span>Wrong network — this wallet isn't connected to <strong id="wrongNetworkTarget"></strong>.</span>
+    <span id="wrongNetworkMessage"></span>
     <button id="switchNetworkBtn" type="button" class="wrong-network-switch">Switch network</button>
   </div>
 
@@ -410,10 +487,10 @@
       <div class="seal-stage" id="ownerSealStage">
         <div class="seal-visual" id="ownerSeal"></div>
         <div class="seal-info">
-          <div class="countdown" id="ownerCountdown">—</div>
+          <div class="unlock-datetime" id="ownerUnlockAt">—</div>
           <hr class="countdown-rule">
+          <div class="countdown" id="ownerCountdown">—</div>
           <div class="count-label" id="ownerCountLabel" aria-live="polite">silence remaining before it unlocks</div>
-          <div class="unlock-datetime" id="ownerUnlockAt"></div>
         </div>
       </div>
 
@@ -437,6 +514,7 @@
         <button class="btn-wax" id="checkInBtn">I'm still here</button>
         <button class="btn-ink" id="depositToggleBtn">Add funds</button>
         <button class="btn-quiet" id="withdrawToggleBtn">Withdraw</button>
+        <button class="btn-quiet" id="changeBenToggleBtn">Change beneficiary</button>
         <button class="btn-danger" id="closeToggleBtn">Close vault</button>
       </div>
       <div class="msg-line" id="ownerMsg"></div>
@@ -461,6 +539,17 @@
         </div>
         <div class="field-hint" id="withdrawHint">A live vault can't drop below the 0.1 BOT minimum — use Close vault to take everything out.</div>
         <div class="field-error-text" id="withdrawError" hidden></div>
+      </div>
+
+      <div class="inline-form" id="changeBenForm" hidden>
+        <label for="changeBenInput">New beneficiary address</label>
+        <div class="inline">
+          <input id="changeBenInput" placeholder="0x..." autocomplete="off" />
+          <button class="btn-wax" id="changeBenConfirm">Change</button>
+          <button class="btn-quiet" id="changeBenCancel">Cancel</button>
+        </div>
+        <div class="field-hint">The letter itself doesn't change — it stays addressed the way you wrote it, and if it's passphrase-sealed, still opens with the same passphrase. Only who's allowed to claim the vault changes.</div>
+        <div class="field-error-text" id="changeBenError" hidden></div>
       </div>
 
       <div class="inline-form" id="closeForm" hidden>
@@ -495,10 +584,10 @@
         <div class="seal-stage" id="claimSealStage" style="margin-top:var(--space-6);">
           <div class="seal-visual" id="claimSeal"></div>
           <div class="seal-info">
-            <div class="countdown" id="claimCountdown">—</div>
+            <div class="unlock-datetime" id="claimUnlockAt">—</div>
             <hr class="countdown-rule">
+            <div class="countdown" id="claimCountdown">—</div>
             <div class="count-label" id="claimCountLabel" aria-live="polite">until the seal may be broken</div>
-            <div class="unlock-datetime" id="claimUnlockAt"></div>
           </div>
         </div>
 
@@ -559,6 +648,28 @@
 </div>
 
 <script src="config.js"></script>
+<script>
+  // Local-dev-only, generated by scripts/deploy-local.js — never touches
+  // the committed config.js (testnet/mainnet). Always attempted, not
+  // gated behind a query param: on a real deploy this file simply doesn't
+  // exist and the request 404s harmlessly (onerror just removes the tag).
+  // Loading it only makes a "local" entry available in
+  // window.LEGACY_VAULT_CONFIG.NETWORKS for the wallet-driven network
+  // resolution below to match against — which network actually gets used
+  // is decided later, from the connected wallet's real chain ID, not from
+  // whether this file happened to load. document.write is deliberate: it's
+  // the one way to inject a same-order blocking <script> during initial
+  // parse, which is what's needed since this has to finish running before
+  // the module script below reads window.LEGACY_VAULT_CONFIG.
+  document.write('<script src="config.local.js" onerror="this.remove()"><\/script>');
+</script>
+<script>
+  // Diagnostic: confirms whether config.local.js actually ran (not just
+  // whether the file exists on disk — a 404 or a JS error inside it both
+  // leave NETWORKS.local unset the same way). Check the browser console
+  // for this line before anything else if the footer isn't showing LOCAL.
+  console.log('[LegacyVault] config check — NETWORKS known at load:', Object.keys(window.LEGACY_VAULT_CONFIG.NETWORKS), 'local entry:', window.LEGACY_VAULT_CONFIG.NETWORKS.local || '(not loaded)');
+</script>
 <script src="beneficiary-crypto.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
 <script type="module">
@@ -587,18 +698,43 @@
     blockExplorers: { default: { name: 'Explorer', url: n.explorerUrl } }
   });
 
-  const testnetNetwork = toNetwork(cfg.NETWORKS.testnet);
-  const mainnetNetwork = toNetwork(cfg.NETWORKS.mainnet);
-  const isMainnetActive = cfg.CHAIN_ID_HEX === cfg.NETWORKS.mainnet.chainIdHex;
-  const activeNetwork = isMainnetActive ? mainnetNetwork : testnetNetwork;
+  // NETWORKS holds testnet/mainnet always, plus a third "local" entry
+  // whenever config.local.js exists on disk (see the loader script above,
+  // now unconditional) — a lookup by chainIdHex rather than a testnet/
+  // mainnet ternary, so this doesn't need touching again if a fourth
+  // network ever shows up. This list only decides what AppKit's own
+  // network-switcher UI offers and what's active before any wallet has
+  // connected; __onAppKitAccount below re-resolves the real active network
+  // from the wallet's actual reported chain ID once one does.
+  const chainDefs = {};
+  for (const [key, n] of Object.entries(cfg.NETWORKS)) chainDefs[key] = toNetwork(n);
+  const activeKey = Object.keys(cfg.NETWORKS).find(key => cfg.NETWORKS[key].chainIdHex === cfg.CHAIN_ID_HEX) || 'testnet';
+  const activeNetwork = chainDefs[activeKey];
+  const otherNetworks = Object.keys(chainDefs).filter(key => key !== activeKey).map(key => chainDefs[key]);
 
-  window.__legacyVaultAppKitNetworks = { testnet: testnetNetwork, mainnet: mainnetNetwork, active: activeNetwork };
+  window.__legacyVaultAppKitNetworks = { ...chainDefs, active: activeNetwork };
+
+  // Confirms what AppKit was actually handed at init — if 'local' isn't in
+  // this list, config.local.js didn't load before this module ran (or
+  // didn't load at all), and AppKit has no way to represent chain 31337 as
+  // a real session no matter what the extension is doing.
+  console.log('[LegacyVault] AppKit initialized with networks:', Object.keys(chainDefs), '— default:', activeKey);
 
   try {
     const appKit = createAppKit({
       adapters: [new EthersAdapter()],
-      networks: [activeNetwork, isMainnetActive ? testnetNetwork : mainnetNetwork],
-      defaultNetwork: activeNetwork,
+      networks: [activeNetwork, ...otherNetworks],
+      // defaultNetwork deliberately omitted: with it set, AppKit was
+      // actively calling wallet_switchEthereumChain toward it on every
+      // connect — confirmed live (chainChanged fires 0x7a69 on disconnect,
+      // then 0x3c8 immediately on reconnect; AppKit's own log shows
+      // "Discarding cache for address eip155:968:..." i.e. it forces the
+      // session onto testnet's CAIP ID regardless of what the wallet was
+      // already on). Without it, AppKit should adopt whatever network the
+      // wallet reports instead of steering it — unverified against a live
+      // wallet session from here, so treat as best-effort; the direct
+      // window.ethereum bypass below (connectDirect) does not depend on
+      // this either way.
       projectId: cfg.WALLETCONNECT_PROJECT_ID,
       metadata: { ...cfg.APPKIT_METADATA, url: window.location.origin },
       features: { analytics: false, email: false, socials: false, onramp: false, swaps: false },
@@ -701,7 +837,7 @@
 </script>
 <script>
   // ---- CONFIG: shared with index.html via config.js ----
-  const CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
+  let CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
 
   // ---- wallet connection debug log ----
@@ -891,7 +1027,27 @@
 
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
-  let ownerDeadline = null, ownerTotalInterval = null, claimDeadline = null, claimTargetOwner = null, claimCiphertext = null;
+  let usingDirectConnect = false; // true when connected via connectDirect() rather than AppKit
+  // Offset (seconds) between the connected chain's clock and this browser's
+  // clock — chainNowSeconds() below is what every countdown/deadline
+  // calculation should use instead of Date.now() directly. On a real chain
+  // these are normally seconds apart and this barely matters; on a local
+  // Hardhat node whose clock got fast-forwarded with evm_increaseTime (see
+  // scripts/jump-time.js), they can be days apart, and using Date.now() as
+  // if it were the chain's clock is exactly what makes a countdown look
+  // wrong for an otherwise-correct interval.
+  let chainClockOffset = 0;
+  function chainNowSeconds() { return Math.floor(Date.now() / 1000) + chainClockOffset; }
+  async function syncChainClock() {
+    try {
+      const c = getReadContract();
+      const runner = c.runner;
+      const p = (runner && typeof runner.getBlock === 'function') ? runner : (runner && runner.provider);
+      const block = p && await p.getBlock('latest');
+      if (block) chainClockOffset = Number(block.timestamp) - Math.floor(Date.now() / 1000);
+    } catch { /* keep the last-known offset rather than resetting to 0 on a transient RPC hiccup */ }
+  }
+  let ownerDeadline = null, ownerTotalInterval = null, claimDeadline = null, claimTotalInterval = null, claimTargetOwner = null, claimCiphertext = null;
   let claimLocalPrivateKey = null; // JWK, once found in localStorage or imported from a backup file
   let lastOwnerSealState = null, lastClaimSealState = null;
   let ownerCiphertext = null, ownerReencryptTarget = null; // { pubKeyRaw, version } once a late registration is detected
@@ -1011,6 +1167,24 @@
     return (d > 0 ? d + 'd ' : '') + `${h}:${m}:${sec}`;
   }
   function note(el, text, cls) { el.textContent = text; el.className = 'msg-line' + (cls ? ' ' + cls : ''); }
+
+  // Use for a success message that follows a real on-chain transaction
+  // (not for informational-only messages like a search result or a
+  // decrypted letter, which never touched a wallet). ethers' tx.wait()
+  // throws unless the receipt's status is a genuine success (verified
+  // against node_modules/ethers source, not assumed) — so every message
+  // shown this way is receipt-confirmed truth, independent of whatever
+  // the wallet extension's own popup/activity list says. Observed in
+  // testing: MetaMask can show "Transaction failed" for a transaction
+  // that the receipt (and this app) confirm actually succeeded — most
+  // reproducible after restarting a local Hardhat node, where MetaMask's
+  // own nonce/activity cache goes stale, but not provably impossible on
+  // a real network either. This footnote is the app's answer to "which
+  // one do I believe."
+  function noteTxSuccess(el, text) {
+    el.innerHTML = `${text} <span class="tx-trust-note">If your wallet says this failed, trust this message — it's confirmed by the transaction receipt.</span>`;
+    el.className = 'msg-line ok';
+  }
   function fieldError(el, text) {
     if (!text) { el.hidden = true; el.textContent = ''; return; }
     el.hidden = false; el.textContent = text;
@@ -1039,6 +1213,7 @@
   // ---------- tx feedback (explorer link) ----------
   function txUrl(hash) { return `${window.LEGACY_VAULT_CONFIG.EXPLORER_TX_BASE}${hash}`; }
   function showTxLink(linkEl, hash) {
+    if (!window.LEGACY_VAULT_CONFIG.EXPLORER_TX_BASE) return; // local dev has no block explorer to link to
     linkEl.href = txUrl(hash);
     linkEl.textContent = 'View transaction on explorer →';
     linkEl.style.display = 'inline-block';
@@ -1064,6 +1239,11 @@
       [/Nothing to claim|Nothing sent/i, () => `Enter an amount greater than zero.`],
       [/user rejected|ACTION_REJECTED/i, () => `Cancelled — nothing was sent.`],
       [/insufficient funds/i, () => `Not enough BOT in your wallet to cover this, including gas.`],
+      [/Transfer failed/i, () => `The payout couldn't be sent to that address. If it's a contract wallet, make sure it can receive BOT, then try again.`],
+      [/Already the beneficiary/i, () => `That address is already the beneficiary — nothing to change.`],
+      [/Key required/i, () => `Registration needs a public key — this usually means your wallet couldn't derive one; try reconnecting.`],
+      [/No such key version/i, () => `That key version doesn't exist for this beneficiary.`],
+      [/could not detect network|NETWORK_ERROR|failed to fetch|ECONNREFUSED/i, () => `Can't reach the network. ${window.LEGACY_VAULT_CONFIG.IS_LOCAL ? 'Make sure the local node is running (npm run local:start).' : 'Check your connection and try again.'}`],
     ];
     if (err && err.networkSwitchFailed) {
       return `Couldn't switch to ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} — some wallets (especially over WalletConnect) only support a fixed chain list. Try a browser wallet extension instead, or add the network manually using the RPC shown in this app's footer.`;
@@ -1071,8 +1251,19 @@
     if (err && err.wrongChainRpc) {
       return `Your wallet connected to a different network than ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} — this chain ID is shared with another, unrelated chain in some wallets' network lists. Remove and re-add ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME} manually using the RPC shown in this app's footer, then reconnect.`;
     }
+    // ethers reports an empty revert (no Error(string), no Panic) as the literal
+    // reason "require(false)" — that's ethers' own placeholder text, not
+    // anything LegacyVault.sol actually raises (every require here carries a
+    // message). It means the call reverted with zero return data, which in
+    // practice means the deployed contract has no matching function for what
+    // was called — almost always a stale contract address in the page versus
+    // what's actually deployed (e.g. after a local redeploy without a
+    // refresh), or occasionally an out-of-gas failure.
+    if (raw === 'require(false)' || /missing revert data|no data present/i.test(raw)) {
+      return `The transaction was rejected on-chain without a reason. This usually means the app is pointed at a stale contract (common right after redeploying${window.LEGACY_VAULT_CONFIG.IS_LOCAL ? ' locally' : ''}) — refresh the page and try again.`;
+    }
     for (const [re, msg] of rules) if (re.test(raw)) return msg();
-    return raw || 'Something went wrong. Please try again.';
+    return raw ? `Something went wrong on-chain (${raw}). Please try again.` : 'Something went wrong. Please try again.';
   }
 
   // ---------- letter encryption ----------
@@ -1277,7 +1468,7 @@
       setBusy($('reencryptBtn'), true, 'Sealing…');
       note($('ownerMsg'), 'Re-sealing…');
       await tx.wait();
-      note($('ownerMsg'), "Re-encrypted. Your beneficiary won't need the passphrase anymore.", 'ok');
+      noteTxSuccess($('ownerMsg'), "Re-encrypted. Your beneficiary won't need the passphrase anymore.");
       showTxLink($('ownerTxLink'), tx.hash);
       $('reencryptPassInput').value = '';
       await refreshOwnerVault();
@@ -1347,7 +1538,37 @@
   // unique to each chain's actual history.
   function getActiveNetworkConfig() {
     const { NETWORKS, CHAIN_ID_HEX } = window.LEGACY_VAULT_CONFIG;
-    return CHAIN_ID_HEX === NETWORKS.mainnet.chainIdHex ? NETWORKS.mainnet : NETWORKS.testnet;
+    return Object.values(NETWORKS).find(n => n.chainIdHex === CHAIN_ID_HEX) || NETWORKS.testnet;
+  }
+
+  // Finds the config.NETWORKS entry matching a chain ID reported directly by
+  // the wallet (hex string, e.g. "0x7a69"), independent of whatever this
+  // build's static default (window.LEGACY_VAULT_CONFIG.CHAIN_ID_HEX) is.
+  // Returns [key, entry] or undefined if the wallet is on a chain this app
+  // doesn't know about at all.
+  function findNetworkForChainId(chainIdHex) {
+    return Object.entries(window.LEGACY_VAULT_CONFIG.NETWORKS)
+      .find(([, n]) => n.chainIdHex.toLowerCase() === String(chainIdHex).toLowerCase());
+  }
+
+  // Switches the app over to whichever network the wallet actually just
+  // connected to (testnet/mainnet/local) — this is what makes plugging a
+  // wallet into chain 31337 use the locally deployed contract without
+  // needing ?network=local or any other manual step: CONTRACT_ADDRESS,
+  // the footer badge, and every error message keyed off NETWORK_NAME/
+  // IS_LOCAL all read from window.LEGACY_VAULT_CONFIG, so updating it here
+  // once propagates everywhere those are read.
+  function applyResolvedNetwork(netKey, netEntry) {
+    const cfg = window.LEGACY_VAULT_CONFIG;
+    CONTRACT_ADDRESS = netEntry.contractAddress;
+    cfg.CONTRACT_ADDRESS = netEntry.contractAddress;
+    cfg.CHAIN_ID_HEX = netEntry.chainIdHex;
+    cfg.NETWORK_NAME = netKey === 'local' ? 'LOCAL' : netEntry.name;
+    cfg.EXPLORER_BASE = netEntry.explorerUrl ? `${netEntry.explorerUrl}/address/` : '';
+    cfg.EXPLORER_TX_BASE = netEntry.explorerUrl ? `${netEntry.explorerUrl}/tx/` : '';
+    cfg.IS_LOCAL = netKey === 'local';
+    readContract = undefined; // was built against whichever network was active before
+    renderNetworkChrome();
   }
 
   // Queries the raw EIP-1193 provider directly, not through ethers —
@@ -1355,18 +1576,26 @@
   // that just switched chains (e.g. right after the user adds BOT Chain)
   // is exactly the moment that cache is most likely stale. Going straight
   // to the wallet removes that layer entirely for this specific check.
-  async function verifyGenuineBotChain(eth) {
-    const expected = getActiveNetworkConfig().genesisHash;
+  // Takes the already-resolved network entry rather than re-deriving it, so
+  // this checks genesis hash against the chain the wallet says it's on, not
+  // against this build's static default.
+  async function verifyGenuineBotChain(eth, netEntry) {
     const genesis = await eth.request({ method: 'eth_getBlockByNumber', params: ['0x0', false] });
-    if (!genesis || String(genesis.hash).toLowerCase() !== expected.toLowerCase()) {
-      const err = new Error('Connected RPC does not match BOT Chain’s genesis block.');
+    if (!genesis || String(genesis.hash).toLowerCase() !== netEntry.genesisHash.toLowerCase()) {
+      console.log('[LegacyVault] genesis hash mismatch for', netEntry.name, '— expected', netEntry.genesisHash, 'got', genesis && genesis.hash);
+      const err = new Error('Connected RPC does not match the expected genesis block.');
       err.wrongChainRpc = true;
       throw err;
     }
   }
 
-  function showWrongNetworkBanner() {
-    $('wrongNetworkTarget').textContent = window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+  // message is optional — omit it for the "wrong chain ID" case (uses the
+  // configured NETWORK_NAME), pass one for the two cases where there's no
+  // single right chain to name (unrecognized chain, or a recognized chain
+  // with no contract deployed on it yet).
+  function showWrongNetworkBanner(message) {
+    $('wrongNetworkMessage').innerHTML = message
+      || `Wrong network — this wallet isn't connected to <strong>${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}</strong>.`;
     $('wrongNetworkBanner').hidden = false;
   }
   function hideWrongNetworkBanner() { $('wrongNetworkBanner').hidden = true; }
@@ -1386,10 +1615,93 @@
   // stale state never lingers across an account or network switch.
   function clearConnectionState() {
     provider = signer = contract = myAddress = undefined;
+    usingDirectConnect = false;
     $('createBtn').disabled = true;
     $('findBtn').disabled = true;
     $('lookupBtn').disabled = true;
+    renderDirectConnectPill();
     refreshOwnerVault(); // contract is now undefined; falls back to the empty "create" view
+  }
+
+  // Shows/hides the header's connected-state pill for the direct-connect
+  // path. <appkit-button>'s own connected UI is untouched either way — it
+  // only reflects AppKit's session, which connectDirect() never creates —
+  // so this hides it (and the skeleton) whenever the pill is showing, so
+  // the header never shows two conflicting connect states at once.
+  function renderDirectConnectPill() {
+    const pill = $('directConnectPill');
+    const appKitBtn = document.querySelector('appkit-button');
+    if (usingDirectConnect && myAddress) {
+      pill.hidden = false;
+      $('directConnectAddr').textContent = short(myAddress);
+      $('walletSkeleton').style.display = 'none';
+      if (appKitBtn) appKitBtn.style.display = 'none';
+    } else {
+      pill.hidden = true;
+      $('walletSkeleton').style.display = '';
+      if (appKitBtn) appKitBtn.style.display = '';
+    }
+  }
+
+  // Shared by both connect paths (AppKit and the direct bypass below) —
+  // takes an already-resolved EIP-1193 provider, resolves which network
+  // it's actually on, and wires up provider/signer/contract. Throws on
+  // any failure; callers are responsible for the try/catch and UI
+  // response (handleConnectError below covers both the same way).
+  async function connectWithEth(eth) {
+    const chainIdHex = await eth.request({ method: 'eth_chainId' });
+    const match = findNetworkForChainId(chainIdHex);
+    console.log('[LegacyVault] wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(none — unrecognized chain)', 'known chains:', Object.fromEntries(Object.entries(window.LEGACY_VAULT_CONFIG.NETWORKS).map(([k, n]) => [k, n.chainIdHex])));
+    if (!match) {
+      const err = new Error(`Wallet is on an unrecognized chain (${chainIdHex}).`);
+      err.unsupportedNetwork = true;
+      err.chainIdHex = chainIdHex;
+      throw err;
+    }
+    const [netKey, netEntry] = match;
+    if (!netEntry.contractAddress) {
+      console.log('[LegacyVault] matched', netKey, 'but it has no contractAddress configured');
+      const err = new Error(`No LegacyVault contract deployed on ${netEntry.name} yet.`);
+      err.noContractOnNetwork = true;
+      err.networkName = netEntry.name;
+      throw err;
+    }
+
+    await verifyGenuineBotChain(eth, netEntry);
+    applyResolvedNetwork(netKey, netEntry);
+    console.log('[LegacyVault] applied network:', netKey, '— CONTRACT_ADDRESS is now', CONTRACT_ADDRESS, '— NETWORK_NAME is now', window.LEGACY_VAULT_CONFIG.NETWORK_NAME);
+
+    provider = new ethers.BrowserProvider(eth);
+    signer = await provider.getSigner();
+    myAddress = await signer.getAddress();
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+    $('createBtn').disabled = false;
+    $('findBtn').disabled = false;
+    $('lookupBtn').disabled = false;
+
+    await refreshOwnerVault();
+    return netKey;
+  }
+
+  function handleConnectError(err) {
+    console.error(err);
+    window.__wcLog && window.__wcLog('account:error', { message: err && err.message, wrongChainRpc: !!(err && err.wrongChainRpc) });
+    clearConnectionState();
+    if (err.wrongChainRpc) {
+      showWrongNetworkBanner();
+    } else if (err.unsupportedNetwork) {
+      const knowsLocal = !!window.LEGACY_VAULT_CONFIG.NETWORKS.local;
+      showWrongNetworkBanner(
+        `Wrong network — this wallet is on a chain Legacy Vault doesn't recognize (${err.chainIdHex}). ` +
+        `Switch to <strong>${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}</strong>` +
+        (knowsLocal ? ` (or Localhost / chain 31337, if you're running the local dev node).` : `.`)
+      );
+    } else if (err.noContractOnNetwork) {
+      showWrongNetworkBanner(`No LegacyVault contract is deployed on <strong>${err.networkName}</strong> yet.`);
+    } else {
+      note($('createMsg'), friendlyError(err), 'err');
+    }
   }
 
   // The single entry point AppKit calls into. `account` is AppKit's own
@@ -1408,29 +1720,81 @@
     }
 
     try {
-      const eth = window.__legacyVaultAppKit.getWalletProvider();
+      const appKitEth = window.__legacyVaultAppKit && window.__legacyVaultAppKit.getWalletProvider();
+
+      // AppKit's own wallet-provider object can misreport chain ID for an
+      // injected wallet — confirmed live: AppKit was calling
+      // wallet_switchEthereumChain toward its defaultNetwork on every
+      // connect (chainChanged fires the wallet's real chain on disconnect,
+      // then AppKit's configured default immediately on reconnect).
+      // window.ethereum, when present, IS the extension itself — go
+      // straight to it for anything chain-related rather than through
+      // AppKit's wrapper. Only fall back to AppKit's provider when there's
+      // no injected wallet at all (a WalletConnect / mobile session with
+      // nothing injected into this page), where it's the only source
+      // there is.
+      const eth = (typeof window.ethereum !== 'undefined') ? window.ethereum : appKitEth;
       if (!eth) throw new Error('Wallet provider not ready yet.');
-      await verifyGenuineBotChain(eth);
 
-      provider = new ethers.BrowserProvider(eth);
-      signer = await provider.getSigner();
-      myAddress = await signer.getAddress();
-      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-
-      $('createBtn').disabled = false;
-      $('findBtn').disabled = false;
-      $('lookupBtn').disabled = false;
-
-      await refreshOwnerVault();
-      window.__wcLog && window.__wcLog('account:ready', { address: myAddress });
+      const netKey = await connectWithEth(eth);
+      window.__wcLog && window.__wcLog('account:ready', { address: myAddress, network: netKey });
     } catch (err) {
-      console.error(err);
-      window.__wcLog && window.__wcLog('account:error', { message: err && err.message, wrongChainRpc: !!(err && err.wrongChainRpc) });
-      clearConnectionState();
-      if (err.wrongChainRpc) showWrongNetworkBanner();
-      else note($('createMsg'), friendlyError(err), 'err');
+      handleConnectError(err);
     }
   };
+
+  // Bypasses AppKit entirely: talks straight to window.ethereum with
+  // eth_requestAccounts, no wallet_switchEthereumChain, no AppKit session
+  // cache. Exists because AppKit's connect flow was found to actively
+  // force the wallet onto its configured default network rather than
+  // adopting whatever chain it's already on — this sidesteps that
+  // completely rather than depending on a fix to AppKit's behavior.
+  async function connectDirect() {
+    if (typeof window.ethereum === 'undefined') {
+      note($('createMsg'), 'No injected wallet found — window.ethereum is undefined. Direct connect needs a browser extension wallet (e.g. MetaMask).', 'err');
+      return;
+    }
+    hideWrongNetworkBanner();
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      if (!accounts || !accounts[0]) throw new Error('No account returned by wallet.');
+      const netKey = await connectWithEth(window.ethereum);
+      usingDirectConnect = true;
+      renderDirectConnectPill();
+      window.__wcLog && window.__wcLog('account:ready (direct)', { address: myAddress, network: netKey });
+    } catch (err) {
+      handleConnectError(err);
+    }
+  }
+  $('directConnectBtn').addEventListener('click', connectDirect);
+  // There's no universal EIP-1193 "revoke" call an injected provider is
+  // guaranteed to support — this clears the app's own connection state
+  // only (same as any other disconnect path here); the extension itself
+  // stays connected until the user disconnects it there too.
+  $('directDisconnectBtn').addEventListener('click', () => {
+    clearConnectionState();
+    hideWrongNetworkBanner();
+  });
+
+  // AppKit's subscribeCaipNetworkChange only fires for switches AppKit
+  // itself initiated (its own network-switcher UI). A user switching
+  // networks directly in the extension — exactly the local-dev workflow —
+  // doesn't go through AppKit at all, so without this, the app would keep
+  // showing whatever network was active at connect time until a manual
+  // disconnect/reconnect. chainChanged is the EIP-1193-standard event
+  // wallets emit for exactly this; re-running the same resolution flow
+  // (window.__onAppKitAccount) on it makes a network switch in the wallet
+  // take effect immediately, for any connected user, not just local dev.
+  if (typeof window.ethereum !== 'undefined' && window.ethereum.on) {
+    window.ethereum.on('chainChanged', (chainIdHex) => {
+      console.log('[LegacyVault] chainChanged event fired — wallet is now on', chainIdHex, '— re-resolving');
+      if (usingDirectConnect) {
+        connectWithEth(window.ethereum).then(renderDirectConnectPill).catch(handleConnectError);
+      } else if (window.__legacyVaultAppKit) {
+        window.__onAppKitAccount(window.__legacyVaultAppKit.getAccount());
+      }
+    });
+  }
 
   function getReadContract() {
     if (contract) return contract;
@@ -1452,8 +1816,9 @@
       $('fInterval').textContent = fmtInterval(v.checkInInterval);
       ownerDeadline = Number(v.lastCheckIn) + Number(v.checkInInterval);
       ownerTotalInterval = Number(v.checkInInterval);
-      $('ownerUnlockAt').textContent = `Unlocks ${new Date(ownerDeadline * 1000).toLocaleString()}`;
-      const secondsLeft = ownerDeadline - Math.floor(Date.now() / 1000);
+      $('ownerUnlockAt').textContent = `Unlocks ${fmtDate(ownerDeadline)}`;
+      await syncChainClock(); // anchor the ticker to the chain's own clock, not this browser's
+      const secondsLeft = ownerDeadline - chainNowSeconds();
       lastOwnerSealState = null; // force a render even if the state string repeats after a reconnect
       updateSeal('ownerSeal', 'ownerSealStage', sealStateFor(v.claimable, secondsLeft, ownerTotalInterval), { get value() { return lastOwnerSealState; }, set value(s) { lastOwnerSealState = s; } });
 
@@ -1537,7 +1902,7 @@
       setBusy($('createBtn'), true, 'Sealing on-chain…');
       note($('createMsg'), 'Sealing on-chain…');
       await tx.wait();
-      note($('createMsg'), 'Vault sealed. Keep checking in.', 'ok');
+      noteTxSuccess($('createMsg'), 'Vault sealed. Keep checking in.');
       showTxLink($('createTxLink'), tx.hash);
       await refreshOwnerVault();
     } catch (err) {
@@ -1554,7 +1919,7 @@
       const tx = await contract.checkIn();
       setBusy($('checkInBtn'), true, 'Recording…');
       await tx.wait();
-      note($('ownerMsg'), 'Proof of life recorded.', 'ok');
+      noteTxSuccess($('ownerMsg'), 'Proof of life recorded.');
       showTxLink($('ownerTxLink'), tx.hash);
       await refreshOwnerVault();
       setTimeout(refreshOwnerVault, 3000);
@@ -1565,7 +1930,7 @@
   }
 
   function showOnlyInlineForm(id) {
-    const all = ['depositForm', 'withdrawForm', 'closeForm'];
+    const all = ['depositForm', 'withdrawForm', 'changeBenForm', 'closeForm'];
     const willShow = $(id).hidden; // if currently hidden, we're about to show it
     all.forEach(fid => { $(fid).hidden = true; });
     $(id).hidden = willShow ? false : true;
@@ -1582,7 +1947,7 @@
       const tx = await contract.deposit({ value: ethers.parseEther(amt) });
       setBusy($('depositConfirm'), true, 'Adding…');
       await tx.wait();
-      note($('ownerMsg'), 'Funds added. Timer reset.', 'ok');
+      noteTxSuccess($('ownerMsg'), 'Funds added. Timer reset.');
       showTxLink($('ownerTxLink'), tx.hash);
       $('depositForm').hidden = true;
       $('depositAmt').value = '';
@@ -1603,7 +1968,7 @@
       const tx = await contract.withdraw(ethers.parseEther(amt));
       setBusy($('withdrawConfirm'), true, 'Withdrawing…');
       await tx.wait();
-      note($('ownerMsg'), 'Withdrawn. Timer reset.', 'ok');
+      noteTxSuccess($('ownerMsg'), 'Withdrawn. Timer reset.');
       showTxLink($('ownerTxLink'), tx.hash);
       $('withdrawForm').hidden = true;
       $('withdrawAmt').value = '';
@@ -1611,6 +1976,39 @@
     } catch (err) {
       fieldError($('withdrawError'), friendlyError(err));
     } finally { setBusy($('withdrawConfirm'), false); }
+  }
+
+  async function changeBenConfirm() {
+    const addr = $('changeBenInput').value.trim();
+    if (!ethers.isAddress(addr)) { fieldError($('changeBenError'), 'Not a valid address.'); setInputError($('changeBenInput'), true); return; }
+    fieldError($('changeBenError'), ''); setInputError($('changeBenInput'), false);
+    setBusy($('changeBenConfirm'), true, 'Confirm in wallet…');
+    hideTxLink($('ownerTxLink'));
+    note($('ownerMsg'), 'Confirm in your wallet…');
+    try {
+      const tx = await contract.updateBeneficiary(addr);
+      setBusy($('changeBenConfirm'), true, 'Changing…');
+      await tx.wait();
+      showTxLink($('ownerTxLink'), tx.hash);
+      $('changeBenForm').hidden = true;
+      $('changeBenInput').value = '';
+      await refreshOwnerVault(); // also re-checks late-registration against the NEW beneficiary
+      // The letter's bytes are untouched by updateBeneficiary — if it was
+      // sealed to the previous beneficiary's registered public key
+      // (format 2, ECIES), that ciphertext is only decryptable with THAT
+      // key pair; there is no way for the owner to recover the plaintext
+      // and re-seal it here, unlike the passphrase case, which stays
+      // readable by anyone holding the (unchanged) passphrase regardless
+      // of who's named on-chain. This is the one case worth a loud, exact
+      // warning rather than a generic success message.
+      if (ownerCiphertext && ownerCiphertext[0] === window.BeneficiaryCrypto.FORMAT_VERSION_REGISTERED) {
+        note($('ownerMsg'), 'Beneficiary changed. But the letter was sealed to the previous beneficiary’s registered key — the new beneficiary cannot decrypt it. Use Close vault and start a new one if they need to read a letter.', 'err');
+      } else {
+        noteTxSuccess($('ownerMsg'), 'Beneficiary changed.');
+      }
+    } catch (err) {
+      fieldError($('changeBenError'), friendlyError(err));
+    } finally { setBusy($('changeBenConfirm'), false); }
   }
 
   async function closeConfirm() {
@@ -1621,7 +2019,7 @@
       const tx = await contract.closeVault();
       setBusy($('closeConfirm'), true, 'Closing…');
       await tx.wait();
-      note($('ownerMsg'), 'Vault closed. Full balance returned.', 'ok');
+      noteTxSuccess($('ownerMsg'), 'Vault closed. Full balance returned.');
       showTxLink($('ownerTxLink'), tx.hash);
       $('closeForm').hidden = true;
       await refreshOwnerVault();
@@ -1667,13 +2065,14 @@
       claimTargetOwner = owner;
       claimCiphertext = null;
       claimDeadline = Number(v.lastCheckIn) + Number(v.checkInInterval);
+      claimTotalInterval = Number(v.checkInInterval);
       $('claimView').style.display = 'block';
       $('cBalance').textContent = fmtBOT(v.balance);
       $('cBeneficiary').textContent = v.beneficiary;
       $('cLastCheckIn').textContent = fmtDate(v.lastCheckIn);
-      $('claimUnlockAt').textContent = `Unlocks ${new Date(claimDeadline * 1000).toLocaleString()}`;
-      const claimTotalInterval = Number(v.checkInInterval);
-      const claimSecondsLeft = claimDeadline - Math.floor(Date.now() / 1000);
+      $('claimUnlockAt').textContent = `Unlocks ${fmtDate(claimDeadline)}`;
+      await syncChainClock(); // anchor the ticker to the chain's own clock, not this browser's
+      const claimSecondsLeft = claimDeadline - chainNowSeconds();
       lastClaimSealState = null;
       updateSeal('claimSeal', 'claimSealStage', sealStateFor(v.claimable, claimSecondsLeft, claimTotalInterval), { get value() { return lastClaimSealState; }, set value(s) { lastClaimSealState = s; } });
       const letter = $('claimLetter');
@@ -1790,7 +2189,7 @@
       setBusy($('claimBtn'), true, 'Breaking the seal…');
       note($('claimMsg'), 'Breaking the seal…');
       await tx.wait();
-      note($('claimMsg'), 'Claimed. What was left is now yours.', 'ok');
+      noteTxSuccess($('claimMsg'), 'Claimed. What was left is now yours.');
       showTxLink($('claimTxLink'), tx.hash);
       await loadClaimVault(claimTargetOwner);
     } catch (err) {
@@ -1800,8 +2199,14 @@
   }
 
   // ---------- countdown ticker ----------
+  // Resynced periodically (not just on load/refresh) so a tab left open
+  // through a local time-jump (npm run local:jump) self-corrects within
+  // 30s instead of showing a stale countdown until the next manual
+  // refresh or check-in.
+  setInterval(syncChainClock, 30000);
+
   setInterval(() => {
-    const now = Math.floor(Date.now() / 1000);
+    const now = chainNowSeconds();
     if (ownerDeadline !== null) {
       const left = ownerDeadline - now;
       const el = $('ownerCountdown');
@@ -1809,11 +2214,16 @@
       const warn = left > 0 && ownerTotalInterval && left / ownerTotalInterval < 0.2;
       el.classList.toggle('due', left <= 0);
       el.classList.toggle('warn', warn);
+      // Names the vault's own allowed-silence window in the same sentence
+      // as the remaining time, rather than leaving the reader to connect
+      // two separately-displayed numbers ("Allowed silence: 1 day(s)"
+      // in the facts list below, vs. an unexplained countdown here).
+      const windowPhrase = ownerTotalInterval ? `of your ${fmtInterval(ownerTotalInterval)} silence window` : 'before it unlocks';
       $('ownerCountLabel').textContent = left <= 0
         ? 'silence exceeded — your beneficiary may now claim'
         : warn
-          ? 'less than 20% of your silence window remains'
-          : 'silence remaining before it unlocks';
+          ? `remaining, ${windowPhrase} — less than 20% left`
+          : `remaining ${windowPhrase}`;
       updateSeal('ownerSeal', 'ownerSealStage', sealStateFor(left <= 0, left, ownerTotalInterval), { get value() { return lastOwnerSealState; }, set value(s) { lastOwnerSealState = s; } });
       if (left === 0) refreshOwnerVault();
     }
@@ -1822,7 +2232,8 @@
       const el = $('claimCountdown');
       el.textContent = fmtCountdown(left);
       el.classList.toggle('due', left <= 0);
-      $('claimCountLabel').textContent = left <= 0 ? 'the seal may be broken' : 'until the seal may be broken';
+      const windowPhrase = claimTotalInterval ? `of the owner's ${fmtInterval(claimTotalInterval)} silence window` : 'until the seal may be broken';
+      $('claimCountLabel').textContent = left <= 0 ? 'the seal may be broken' : `remaining ${windowPhrase}`;
       if (left === 0 && claimTargetOwner) loadClaimVault(claimTargetOwner);
     }
   }, 1000);
@@ -1841,12 +2252,15 @@
   $('reencryptBtn').addEventListener('click', reencryptForRegisteredBeneficiary);
   $('depositToggleBtn').addEventListener('click', () => showOnlyInlineForm('depositForm'));
   $('withdrawToggleBtn').addEventListener('click', () => showOnlyInlineForm('withdrawForm'));
+  $('changeBenToggleBtn').addEventListener('click', () => showOnlyInlineForm('changeBenForm'));
   $('closeToggleBtn').addEventListener('click', () => showOnlyInlineForm('closeForm'));
   $('depositCancel').addEventListener('click', () => { $('depositForm').hidden = true; fieldError($('depositError'), ''); });
   $('withdrawCancel').addEventListener('click', () => { $('withdrawForm').hidden = true; fieldError($('withdrawError'), ''); });
+  $('changeBenCancel').addEventListener('click', () => { $('changeBenForm').hidden = true; fieldError($('changeBenError'), ''); });
   $('closeCancel').addEventListener('click', () => { $('closeForm').hidden = true; });
   $('depositConfirm').addEventListener('click', depositConfirm);
   $('withdrawConfirm').addEventListener('click', withdrawConfirm);
+  $('changeBenConfirm').addEventListener('click', changeBenConfirm);
   $('closeConfirm').addEventListener('click', closeConfirm);
   $('msgInput').addEventListener('input', updateMsgCounter);
   let benCheckDebounce = null;
@@ -1870,11 +2284,32 @@
   });
 
   // ---------- footer + initial state ----------
-  const networkBadgeEl = $('networkBadge');
-  networkBadgeEl.textContent = window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
-  networkBadgeEl.setAttribute('aria-label', `Active network: ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}`);
-  $('contractAddr').textContent = `contract: ${CONTRACT_ADDRESS}`;
-  $('explorerLink').href = `${window.LEGACY_VAULT_CONFIG.EXPLORER_BASE}${CONTRACT_ADDRESS}`;
+  // Re-run every time applyResolvedNetwork() switches the active network
+  // (e.g. connecting a wallet on chain 31337), not just once at load, so
+  // the footer badge, contract address, explorer link, and the LOCAL DEV
+  // banner never go stale after a network switch. Declared as a function
+  // (hoisted) so applyResolvedNetwork — defined earlier in this script —
+  // can call it.
+  function renderNetworkChrome() {
+    const networkBadgeEl = $('networkBadge');
+    networkBadgeEl.textContent = window.LEGACY_VAULT_CONFIG.IS_LOCAL ? 'LOCAL' : window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+    networkBadgeEl.classList.toggle('is-local', !!window.LEGACY_VAULT_CONFIG.IS_LOCAL);
+    networkBadgeEl.setAttribute('aria-label', `Active network: ${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}`);
+    $('contractAddr').textContent = `contract: ${CONTRACT_ADDRESS}`;
+    if (window.LEGACY_VAULT_CONFIG.EXPLORER_BASE) {
+      $('explorerLink').href = `${window.LEGACY_VAULT_CONFIG.EXPLORER_BASE}${CONTRACT_ADDRESS}`;
+      $('explorerLink').style.display = '';
+    } else {
+      $('explorerLink').style.display = 'none'; // local dev has no block explorer
+    }
+    $('localDevBanner').hidden = !window.LEGACY_VAULT_CONFIG.IS_LOCAL;
+  }
+
+  renderNetworkChrome();
+  // Independent of the active/resolved network above — this only checks
+  // whether config.local.js loaded at all, so the bypass is visible even
+  // before any connection has succeeded (that's the point of it).
+  $('directConnectRow').hidden = !window.LEGACY_VAULT_CONFIG.NETWORKS.local;
   $('ownerSeal').innerHTML = sealSVG('intact');
   loadConstraints();
 </script>

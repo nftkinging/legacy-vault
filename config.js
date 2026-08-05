@@ -1,7 +1,7 @@
 // Shared network/contract config for index.html (landing) and app.html (the dApp).
 // Single source of truth so switching 968 <-> 677 never means hunting through two files.
 window.LEGACY_VAULT_CONFIG = {
-  CONTRACT_ADDRESS: "0x688C6810e0aa07e26941cEaC1972c7d3Be8820c9",
+  CONTRACT_ADDRESS: "0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7",
   CHAIN_ID_HEX: "0x3C8", // 968
   NETWORK_NAME: "BOT Chain Testnet",
   NETWORK_PARAMS: {
@@ -41,6 +41,12 @@ window.LEGACY_VAULT_CONFIG = {
   // wallet can report chain ID 968 while actually connected to the wrong
   // network. Comparing eth_chainId alone would not catch that; comparing
   // genesis hash does. See docs/LegacyVault_Mainnet_Plan.md Batch 5 item 7.
+  // contractAddress here (not just the top-level CONTRACT_ADDRESS above) is
+  // what lets app.html pick the right contract for whichever chain the
+  // connected wallet actually reports, instead of trusting whatever this
+  // build's default happened to be. mainnet has none yet — a wallet
+  // connected to 677 gets a loud "not deployed yet" warning rather than
+  // silently being pointed at testnet's contract.
   NETWORKS: {
     testnet: {
       id: 968,
@@ -50,7 +56,8 @@ window.LEGACY_VAULT_CONFIG = {
       nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
       rpcUrls: ["https://rpc.bohr.life"],
       explorerUrl: "https://scan.bohr.life",
-      genesisHash: "0x395bd3d6583216495648e8322032761c1a377eddf04f59de0c693c7d6682aee6"
+      genesisHash: "0x395bd3d6583216495648e8322032761c1a377eddf04f59de0c693c7d6682aee6",
+      contractAddress: "0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7"
     },
     mainnet: {
       id: 677,
@@ -60,7 +67,8 @@ window.LEGACY_VAULT_CONFIG = {
       nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
       rpcUrls: ["https://rpc.botchain.ai"],
       explorerUrl: "https://scan.botchain.ai",
-      genesisHash: "0x161a4ff8b4c95e95b314899c4ea8f9782c4ae8851362ffe0d47c0b8a05f7b784"
+      genesisHash: "0x161a4ff8b4c95e95b314899c4ea8f9782c4ae8851362ffe0d47c0b8a05f7b784",
+      contractAddress: null
     }
   }
 };

@@ -1,7 +1,14 @@
 # LegacyVault.sol — Pre-Mainnet Security Review
 
 **Contract:** `LegacyVault.sol`, Solidity `^0.8.20`
-**Currently deployed:** BOT Chain testnet (chain 968), `0x688C6810e0aa07e26941cEaC1972c7d3Be8820c9`
+**Reviewed deployment:** BOT Chain testnet (chain 968), `0x688C6810e0aa07e26941cEaC1972c7d3Be8820c9`
+**Superseded by:** the Batch 2 hardened contract, redeployed fresh for Batch 5 at
+`0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7`. This review was conducted against the
+address above, not the current one — Batch 2 addressed several findings below (at minimum
+1, 2, 3, 5, 6, 7 — `updateBeneficiary`/`closeVault` now exist, intervals and deposits are
+bounded, the reverse-index is deduped), but the findings and checklist below are left
+exactly as originally written rather than marked resolved here, since that needs a
+deliberate line-by-line pass against the current contract, not a one-line assumption.
 **Reviewed:** ahead of mainnet deployment
 **Reviewer:** informal review — **not a substitute for a professional audit**
 

@@ -20,7 +20,7 @@ hardened for a mainnet launch backed by BOT Chain.
 | RPC | `https://rpc.bohr.life` | `https://rpc.botchain.ai` |
 | Explorer | `https://scan.bohr.life/` | `https://scan.botchain.ai` |
 
-Live testnet contract: `0x688C6810e0aa07e26941cEaC1972c7d3Be8820c9`
+Live testnet contract: `0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7` (hardened, Batch 5)
 Mainnet BOT is only obtainable by swapping on `dex.botchain.ai` — there is no mainnet faucet.
 
 ## Reference docs

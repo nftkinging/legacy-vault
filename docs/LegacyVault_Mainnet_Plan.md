@@ -1,7 +1,7 @@
 # Legacy Vault — Mainnet Launch Plan
 
-**Current state:** deployed on BOT Chain **testnet** (chain 968), contract
-`0x688C6810e0aa07e26941cEaC1972c7d3Be8820c9`, frontend live on GitHub Pages.
+**Current state:** deployed on BOT Chain **testnet** (chain 968), hardened contract (Batch 5)
+`0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7`, frontend live on GitHub Pages.
 **Target:** BOT Chain **mainnet** (chain 677), hardened contract, audited, hosted on Vercel.
 
 Work through the batches in order. Each has a **goal**, **steps**, and an **exit criterion** —

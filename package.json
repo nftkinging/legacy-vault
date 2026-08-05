@@ -4,7 +4,11 @@
   "description": "A dead man's switch on BOT Chain — lock BOT and a final letter for a beneficiary; if you stop checking in, they inherit it.",
   "scripts": {
     "compile": "hardhat compile",
-    "deploy": "hardhat run scripts/deploy.js --network botchainTestnet"
+    "deploy": "hardhat run scripts/deploy.js --network botchainTestnet",
+    "local:node": "hardhat node",
+    "local:start": "node scripts/start-local-node.js",
+    "local:deploy": "hardhat run scripts/deploy-local.js --network localhost",
+    "local:jump": "hardhat run scripts/jump-time.js --network localhost"
   },
   "license": "MIT",
   "devDependencies": {

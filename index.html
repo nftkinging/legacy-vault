@@ -276,6 +276,11 @@
       <summary>What if I don't check in in time?</summary>
       <p>Nothing happens instantly. Once your chosen silence interval passes, your named beneficiary becomes able to claim the vault and read the letter — but you can still check in or withdraw right up until the moment they do.</p>
     </details>
+
+    <details class="faq-item">
+      <summary>My wallet says a transaction failed, but the app says it succeeded — which is true?</summary>
+      <p>Trust the app. Every success message you see here only appears after the app has confirmed the transaction's actual on-chain receipt — not after the wallet extension's own notification. Wallets occasionally show a stale "failed" popup for a transaction that genuinely went through (most often after switching networks or accounts). If the two ever disagree, check your balance or the vault's state before retrying — retrying a transaction that already succeeded just spends gas twice.</p>
+    </details>
   </section>
 
   <footer class="site">
