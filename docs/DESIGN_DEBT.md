@@ -17,3 +17,30 @@ calling `docs/BRAND_DESIGN_BRIEF.md` done.
 Functional work (wallet connection) proceeds in parallel per
 `docs/BATCH_4_DESIGN_BRIEF.md`. Return to this list before the design brief is
 considered satisfied.
+
+---
+
+## Product debt — beneficiary has no way to pay gas to claim
+
+Found on testnet: a beneficiary's wallet is almost always empty the first time
+they ever open it — a non-technical heir isn't going to have pre-funded a
+wallet against the day they inherit one. Claiming is still an on-chain
+transaction and still costs gas like any other, so an empty wallet silently
+blocks the one moment this product exists for.
+
+Mitigated for testnet only (`app.html`, `checkClaimGasBalance()`): detects a
+too-low balance on the claim screen and explains it plainly before the
+button is pressed, with a link to the testnet faucet
+(`https://faucet.botchain.ai/basic`, `config.js` → `NETWORKS.testnet.faucetUrl`).
+
+**Not solved for mainnet.** There is no mainnet faucet (see `CLAUDE.md`), so
+"go get some BOT first" is a real onboarding wall, not just a worse version
+of the testnet mitigation. The roadmap already names a keeper (Batch 9,
+`docs/LegacyVault_Mainnet_Plan.md`) for deadline automation — the same
+direction is worth extending to the claim itself: a sponsored or
+meta-transaction claim path (the keeper, or some relayer, pays the gas; the
+beneficiary just signs) would remove the gas barrier entirely instead of
+requiring them to acquire BOT before they can receive BOT. Not scoped for
+the current mainnet launch — noted here so it isn't lost, and so "beneficiary
+claims successfully" isn't assumed solved just because the testnet warning
+exists.

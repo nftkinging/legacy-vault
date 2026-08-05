@@ -64,7 +64,13 @@ window.LEGACY_VAULT_CONFIG = {
       // before the user approves. Empty string (see mainnet below) hides
       // this warning entirely — 677 is correctly registered to BOT Chain,
       // per docs/LegacyVault_Mainnet_Plan.md Batch 5 item 7.
-      registryCollisionWarning: "Some wallets may show this network as “Datagram” when adding it — that’s a public registry mix-up for chain 968, not a wrong network. Just confirm the RPC reads rpc.bohr.life before approving."
+      registryCollisionWarning: "Some wallets may show this network as “Datagram” when adding it — that’s a public registry mix-up for chain 968, not a wrong network. Just confirm the RPC reads rpc.bohr.life before approving.",
+      // Shown to a beneficiary whose wallet can't cover gas to claim —
+      // exactly the common case for a non-technical heir who's never
+      // touched this wallet before. No mainnet equivalent: there is no
+      // mainnet faucet (see CLAUDE.md) — see docs/DESIGN_DEBT.md for why
+      // that's a real, still-open onboarding problem there.
+      faucetUrl: "https://faucet.botchain.ai/basic"
     },
     mainnet: {
       id: 677,
@@ -76,7 +82,8 @@ window.LEGACY_VAULT_CONFIG = {
       explorerUrl: "https://scan.botchain.ai",
       genesisHash: "0x161a4ff8b4c95e95b314899c4ea8f9782c4ae8851362ffe0d47c0b8a05f7b784",
       contractAddress: null,
-      registryCollisionWarning: ""
+      registryCollisionWarning: "",
+      faucetUrl: ""
     }
   }
 };

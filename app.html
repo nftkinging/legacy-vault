@@ -255,6 +255,19 @@
   #manualNetCollisionWarning[hidden] { display: none; }
   #manualNetCollisionWarning { margin-top: var(--space-3); }
 
+  /* ---------- claim-side gas warning ---------- */
+  .gas-warning[hidden] { display: none; }
+  .gas-warning {
+    font-family: var(--font-data); font-size: var(--text-xs); line-height: 1.6;
+    color: var(--text);
+    background: var(--parchment-3);
+    border: 1px solid var(--wax-deep);
+    border-radius: 2px;
+    padding: var(--space-3) var(--space-4);
+    margin: 0 0 var(--space-4);
+  }
+  .gas-warning a { color: var(--wax-deep); text-decoration: underline; text-underline-offset: 2px; }
+
   /* ---------- tabs ---------- */
   .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: var(--space-6); }
   .tab {
@@ -719,6 +732,14 @@
             <input type="file" id="importKeyInput" accept="application/json" />
           </div>
         </div>
+
+        <!-- Checked once the vault is claimable and this wallet is the
+             named beneficiary — a non-technical heir will almost always
+             have an empty wallet the first time they ever open one, and
+             claiming still costs gas like any transaction. Shown above
+             the button, not just left to a failed transaction to explain
+             it after the fact. -->
+        <p class="gas-warning" id="claimGasWarning" hidden></p>
 
         <div class="actions">
           <button class="btn-wax" id="claimBtn" disabled>Break the seal &amp; claim</button>
@@ -2369,6 +2390,48 @@
     } finally { setBusy($('findBtn'), false); }
   }
 
+  // A non-technical beneficiary's wallet is almost always empty the first
+  // time they ever open it — claiming is still a transaction and still
+  // costs gas, which is exactly the kind of thing that silently blocks
+  // someone who has no idea what "gas" means. Checked once the vault is
+  // claimable and the connected address is the actual beneficiary; never
+  // blocks the button itself (this is informational only) — any failure
+  // here just leaves the warning hidden rather than surfacing a second,
+  // unrelated error.
+  async function checkClaimGasBalance(v, owner) {
+    const el = $('claimGasWarning');
+    el.hidden = true;
+    if (!provider || !myAddress || !contract || myAddress.toLowerCase() !== v.beneficiary.toLowerCase()) return;
+    try {
+      const balance = await provider.getBalance(myAddress);
+      let estimatedCost = null;
+      try {
+        const [gasEstimate, feeData] = await Promise.all([
+          contract.claim.estimateGas(owner),
+          provider.getFeeData(),
+        ]);
+        const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
+        if (gasPrice) estimatedCost = gasEstimate * gasPrice;
+      } catch {
+        // Estimation can fail for reasons unrelated to gas (e.g. a stale
+        // read right at the claimable boundary) — fall through to the
+        // flat threshold below rather than skipping the warning entirely.
+      }
+      const threshold = estimatedCost !== null ? estimatedCost * 2n : ethers.parseEther('0.01');
+      if (balance < threshold) {
+        const needText = estimatedCost !== null
+          ? `roughly ${ethers.formatEther(estimatedCost)} BOT`
+          : 'a small amount of BOT';
+        const faucetUrl = getActiveNetworkConfig().faucetUrl;
+        el.innerHTML = `Your wallet has ${ethers.formatEther(balance)} BOT. Claiming is a transaction like any other — you'll need ${needText} to cover the network fee.` +
+          (faucetUrl ? ` <a href="${faucetUrl}" target="_blank" rel="noopener">Get testnet BOT from the faucet</a>.` : '');
+        el.hidden = false;
+      }
+    } catch (err) {
+      console.warn('Could not check beneficiary gas balance:', err);
+    }
+  }
+
   async function loadClaimVault(owner) {
     note($('claimMsg'), 'Opening the record…');
     try {
@@ -2390,6 +2453,7 @@
       const msgBytes = ethers.getBytes(v.message);
       const encrypted = isEncrypted(msgBytes);
       $('passphraseInput').value = '';
+      $('claimGasWarning').hidden = true;
       $('decryptRow').style.display = 'none';
       $('passphraseDecryptRow').style.display = 'none';
       $('registeredDecryptRow').style.display = 'none';
@@ -2425,11 +2489,13 @@
         }
         $('claimBtn').disabled = !(myAddress && myAddress.toLowerCase() === v.beneficiary.toLowerCase() && v.balance > 0n);
         note($('claimMsg'), Number(v.balance) === 0 ? 'This vault has already been claimed.' : 'The silence has passed. The seal may be broken.', '');
+        await checkClaimGasBalance(v, owner);
       } else {
         letter.textContent = encrypted ? 'Sealed — this letter is encrypted until claimable.' : '(sealed)';
         letter.classList.add('sealed');
         $('sealedNote').style.display = 'flex';
         $('claimBtn').disabled = true;
+        $('claimGasWarning').hidden = true;
         note($('claimMsg'), 'The owner is still answering. The letter stays sealed.', '');
       }
     } catch (err) {
