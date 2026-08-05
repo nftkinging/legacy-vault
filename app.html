@@ -448,16 +448,23 @@
     <button type="button" id="directConnectBtn" class="wrong-network-switch">Connect directly (bypass AppKit)</button>
   </div>
 
+  <!-- Everything below stays fully hidden until something has actually
+       gone wrong — no jargon, no RPC/chain-ID values, above the fold for
+       a first-time visitor who hasn't even tried to connect yet. The
+       automatic wallet_addEthereumChain attempt (see ensureWalletHasChain
+       in the script) is always tried first and silently; this only
+       becomes visible if that fails. -->
   <div id="wrongNetworkBanner" class="wrong-network-banner" hidden role="alert">
     <span id="wrongNetworkMessage"></span>
-    <button id="switchNetworkBtn" type="button" class="wrong-network-switch">Switch network</button>
+    <button id="switchNetworkBtn" type="button" class="wrong-network-switch" hidden>Switch network</button>
+    <button id="addChainBtn" type="button" class="wrong-network-switch" hidden>Add BOT Chain</button>
   </div>
 
-  <!-- Always available, not just after a failed auto-add — some wallets
-       (mobile ones especially) ignore wallet_addEthereumChain entirely, so
-       a first-time user needs a way to get here without one failing first. -->
-  <p style="text-align:center; margin: 0 0 var(--space-4);">
-    <button type="button" id="manualNetworkToggle" class="debug-log-toggle">Add BOT Chain to your wallet by hand</button>
+  <!-- Only revealed once addChainBtn's own retry has also failed — see
+       handleConnectError. A single small link, not a button, since this
+       is explicitly the secondary path. -->
+  <p id="manualNetworkToggleRow" hidden style="text-align:center; margin: var(--space-2) 0 var(--space-4);">
+    <button type="button" id="manualNetworkToggle" class="debug-log-toggle">Enter the network details manually instead</button>
   </p>
 
   <div id="manualNetworkPanel" class="manual-network-panel" hidden>
@@ -932,6 +939,33 @@
   // ?debug=1 to the URL to reveal it.
   if (new URLSearchParams(window.location.search).get('debug') === '1') {
     document.getElementById('debugLogToggle').hidden = false;
+  }
+  const DEBUG_MODE = new URLSearchParams(window.location.search).get('debug') === '1';
+
+  // Wallet errors don't survive JSON.stringify by default — Error
+  // instances keep message/stack as non-enumerable own properties, so
+  // logging one raw produces "{}" in the debug panel, which is exactly
+  // useless for the thing it needs to show (three rounds of mobile fixes
+  // now guessed at what a wallet actually returned instead of seeing it).
+  // Walks known error-shape fields (message/code/name/reason/data/
+  // originalError) explicitly at each nesting level, using `in` rather
+  // than Object.keys so it finds non-enumerable properties too, and
+  // recurses into .data/.originalError since that's exactly where
+  // MetaMask and others bury the real code for a wrapped RPC error.
+  function plainifyError(e, depth) {
+    depth = depth || 0;
+    if (!e || typeof e !== 'object' || depth > 5) return e;
+    const out = {};
+    if ('name' in e) out.name = e.name;
+    if ('message' in e) out.message = e.message;
+    if ('code' in e) out.code = e.code;
+    if ('reason' in e) out.reason = e.reason;
+    if ('data' in e) out.data = plainifyError(e.data, depth + 1);
+    if ('originalError' in e) out.originalError = plainifyError(e.originalError, depth + 1);
+    for (const k of Object.keys(e)) {
+      if (!(k in out) && k !== 'stack') out[k] = e[k];
+    }
+    return out;
   }
   const walletDebugLog = [];
   function escapeHtml(s) {
@@ -1673,15 +1707,54 @@
   }
 
   // message is optional — omit it for the "wrong chain ID" case (uses the
-  // configured NETWORK_NAME), pass one for the two cases where there's no
-  // single right chain to name (unrecognized chain, or a recognized chain
-  // with no contract deployed on it yet).
+  // configured NETWORK_NAME), pass one for the other cases where there's
+  // no single right chain to name. Resets every action inside/below the
+  // banner to hidden on every call — each site in handleConnectError that
+  // wants one explicitly un-hides it right after, so a button from a
+  // previous, different failure can never linger into an unrelated one
+  // (e.g. "Add BOT Chain" staying visible for a plain wrong-network case).
   function showWrongNetworkBanner(message) {
     $('wrongNetworkMessage').innerHTML = message
       || `Wrong network — this wallet isn't connected to <strong>${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}</strong>.`;
     $('wrongNetworkBanner').hidden = false;
+    $('switchNetworkBtn').hidden = true;
+    $('addChainBtn').hidden = true;
+    $('manualNetworkToggleRow').hidden = true;
+    $('manualNetworkPanel').hidden = true;
   }
   function hideWrongNetworkBanner() { $('wrongNetworkBanner').hidden = true; }
+
+  // Direct, single-purpose retry for the "auto add/switch already failed"
+  // case — no jargon, one obvious button, calls wallet_addEthereumChain
+  // straight away (switching first is pointless here: the automatic
+  // attempt already tried that and got code 4902, i.e. proved the wallet
+  // doesn't know the chain at all). On success, re-runs whichever connect
+  // path was active so the rest of the flow (signer, contract) completes.
+  $('addChainBtn').addEventListener('click', async () => {
+    setBusy($('addChainBtn'), true, 'Confirm in wallet…');
+    try {
+      const eth = (typeof window.ethereum !== 'undefined')
+        ? window.ethereum
+        : window.__legacyVaultAppKit && window.__legacyVaultAppKit.getWalletProvider();
+      if (!eth) throw new Error('Wallet provider not ready yet.');
+      window.__wcLog && window.__wcLog('addChainBtn:wallet_addEthereumChain:call', NETWORK_PARAMS);
+      await eth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
+      window.__wcLog && window.__wcLog('addChainBtn:wallet_addEthereumChain:ok');
+      hideWrongNetworkBanner();
+      if (usingDirectConnect) {
+        await connectDirect();
+      } else if (window.__legacyVaultAppKit) {
+        await window.__onAppKitAccount(window.__legacyVaultAppKit.getAccount());
+      }
+    } catch (err) {
+      window.__wcLog && window.__wcLog('addChainBtn:wallet_addEthereumChain:error', plainifyError(err));
+      handleConnectError(classifyChainOnboardingError(err));
+    } finally { setBusy($('addChainBtn'), false); }
+  });
+
+  $('manualNetworkToggle').addEventListener('click', () => {
+    $('manualNetworkPanel').hidden = !$('manualNetworkPanel').hidden;
+  });
 
   $('switchNetworkBtn').addEventListener('click', async () => {
     try {
@@ -1761,16 +1834,26 @@
     if (target && target.registryCollisionWarning) {
       showWrongNetworkBanner(`Adding ${target.name} to your wallet — ${target.registryCollisionWarning}`);
     }
+    window.__wcLog && window.__wcLog('wallet_switchEthereumChain:call', { chainId: NETWORK_PARAMS.chainId });
     try {
       await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: NETWORK_PARAMS.chainId }] });
+      window.__wcLog && window.__wcLog('wallet_switchEthereumChain:ok');
       return;
     } catch (switchErr) {
+      // Logged BEFORE classification — classifyChainOnboardingError only
+      // keeps a single message string for display, so this is the one
+      // place the full shape (code, nested data.originalError) still
+      // exists to be seen.
+      window.__wcLog && window.__wcLog('wallet_switchEthereumChain:error', plainifyError(switchErr));
       const code = switchErr && (switchErr.code ?? (switchErr.data && switchErr.data.originalError && switchErr.data.originalError.code));
       if (code !== 4902) throw classifyChainOnboardingError(switchErr);
     }
+    window.__wcLog && window.__wcLog('wallet_addEthereumChain:call', NETWORK_PARAMS);
     try {
       await eth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
+      window.__wcLog && window.__wcLog('wallet_addEthereumChain:ok');
     } catch (addErr) {
+      window.__wcLog && window.__wcLog('wallet_addEthereumChain:error', plainifyError(addErr));
       throw classifyChainOnboardingError(addErr);
     }
   }
@@ -1831,27 +1914,39 @@
 
   function handleConnectError(err) {
     console.error(err);
-    window.__wcLog && window.__wcLog('account:error', { message: err && err.message, wrongChainRpc: !!(err && err.wrongChainRpc) });
+    window.__wcLog && window.__wcLog('account:error', {
+      message: err && err.message, wrongChainRpc: !!(err && err.wrongChainRpc),
+      chainOnboardingDeclined: !!(err && err.chainOnboardingDeclined),
+      chainOnboardingFailed: !!(err && err.chainOnboardingFailed),
+      chainOnboardingReason: err && err.chainOnboardingReason,
+    });
     clearConnectionState();
     if (err.wrongChainRpc) {
       showWrongNetworkBanner();
+      $('switchNetworkBtn').hidden = false;
     } else if (err.chainOnboardingDeclined) {
       // 4001 on wallet_switchEthereumChain/wallet_addEthereumChain — the
       // user said no to adding the network, not a real failure. Distinct
       // from the generic error path so this never reads as something
-      // broken; retrying just means tapping Connect again.
+      // broken; retrying just means tapping Connect again. No action
+      // button here — Connect Wallet itself is the retry.
       const targetName = (getBuildTargetNetwork() || {}).name || window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
       showWrongNetworkBanner(`You declined adding ${targetName}. Tap Connect to try again.`);
     } else if (err.chainOnboardingFailed) {
       // Anything else — the wallet doesn't support wallet_addEthereumChain
-      // at all, rejected the params, or silently no-op'd. The manual panel
-      // is the real fallback here since we can't know why it failed for
-      // every wallet; opened automatically rather than making the user
-      // find the toggle themselves right after a failure.
+      // at all, rejected the params, or silently no-op'd. One obvious
+      // retry button first; the raw RPC/chain-ID values stay behind the
+      // "enter manually instead" link, not shown automatically — most
+      // people never need to see them. The raw error that actually caused
+      // this was already logged at the point it was caught (see
+      // ensureWalletHasChain / the addChainBtn handler) — this is only a
+      // summary, not the full shape, since classifyChainOnboardingError
+      // deliberately strips it down to just a message for display.
       const targetName = (getBuildTargetNetwork() || {}).name || window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
-      showWrongNetworkBanner(`Could not add ${targetName} to your wallet automatically (${err.chainOnboardingReason}). Add it by hand instead — see below.`);
-      $('manualNetworkPanel').hidden = false;
-      $('manualNetworkPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      showWrongNetworkBanner(`Could not add ${targetName} automatically (${err.chainOnboardingReason}).`);
+      $('addChainBtn').hidden = false;
+      $('manualNetworkToggleRow').hidden = false;
+      if (DEBUG_MODE) { document.getElementById('debugLogPanel').hidden = false; renderWalletDebugLog(); }
     } else if (err.noContractOnNetwork) {
       showWrongNetworkBanner(`No LegacyVault contract is deployed on <strong>${err.networkName}</strong> yet.`);
     } else {
@@ -2493,10 +2588,6 @@
     $('manualNetCollisionWarning').hidden = !warning;
   }
   renderManualNetworkPanel();
-
-  $('manualNetworkToggle').addEventListener('click', () => {
-    $('manualNetworkPanel').hidden = !$('manualNetworkPanel').hidden;
-  });
 
   document.querySelectorAll('.copy-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
