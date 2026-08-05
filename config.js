@@ -57,7 +57,14 @@ window.LEGACY_VAULT_CONFIG = {
       rpcUrls: ["https://rpc.bohr.life"],
       explorerUrl: "https://scan.bohr.life",
       genesisHash: "0x395bd3d6583216495648e8322032761c1a377eddf04f59de0c693c7d6682aee6",
-      contractAddress: "0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7"
+      contractAddress: "0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7",
+      // 968 is registered to an unrelated project (Datagram/DGRAM) in public
+      // chain-list registries — a wallet resolving wallet_addEthereumChain
+      // against that registry can show "Datagram" as the network name
+      // before the user approves. Empty string (see mainnet below) hides
+      // this warning entirely — 677 is correctly registered to BOT Chain,
+      // per docs/LegacyVault_Mainnet_Plan.md Batch 5 item 7.
+      registryCollisionWarning: "Some wallets may show this network as “Datagram” when adding it — that’s a public registry mix-up for chain 968, not a wrong network. Just confirm the RPC reads rpc.bohr.life before approving."
     },
     mainnet: {
       id: 677,
@@ -68,7 +75,8 @@ window.LEGACY_VAULT_CONFIG = {
       rpcUrls: ["https://rpc.botchain.ai"],
       explorerUrl: "https://scan.botchain.ai",
       genesisHash: "0x161a4ff8b4c95e95b314899c4ea8f9782c4ae8851362ffe0d47c0b8a05f7b784",
-      contractAddress: null
+      contractAddress: null,
+      registryCollisionWarning: ""
     }
   }
 };

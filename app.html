@@ -207,6 +207,41 @@
   .wrong-network-switch:hover { color: var(--gilt-hover); }
   .wrong-network-switch:focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
 
+  /* ---------- manual network entry (fallback for wallets that ignore
+     wallet_addEthereumChain, or a proactive way to add the network before
+     ever attempting to connect) ---------- */
+  .manual-network-panel[hidden] { display: none; }
+  .manual-network-panel {
+    background: var(--parchment-3);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: var(--space-4) var(--space-5);
+    margin: 0 0 var(--space-6);
+    font-family: var(--font-data); font-size: var(--text-xs);
+  }
+  .manual-network-panel > p { margin: 0 0 var(--space-3); color: var(--text); }
+  .manual-network-fields { display: grid; gap: var(--space-2); margin: 0; }
+  .manual-network-field { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+  .manual-network-field dt {
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; flex-shrink: 0;
+  }
+  .manual-network-field dd {
+    margin: 0; display: flex; align-items: center; gap: var(--space-2); min-width: 0;
+  }
+  .manual-network-field dd span {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .copy-btn {
+    flex-shrink: 0; background: none; border: 1px solid var(--rule); color: var(--muted);
+    font-family: var(--font-data); font-size: 10px; text-transform: none;
+    padding: 2px 8px; border-radius: 2px; cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--ink); border-color: var(--ink); }
+  .copy-btn.copied { color: var(--ok); border-color: var(--ok); }
+  #manualNetCollisionWarning[hidden] { display: none; }
+  #manualNetCollisionWarning { margin-top: var(--space-3); }
+
   /* ---------- tabs ---------- */
   .tabs { display: flex; justify-content: center; gap: 0; margin-bottom: var(--space-6); }
   .tab {
@@ -416,6 +451,40 @@
   <div id="wrongNetworkBanner" class="wrong-network-banner" hidden role="alert">
     <span id="wrongNetworkMessage"></span>
     <button id="switchNetworkBtn" type="button" class="wrong-network-switch">Switch network</button>
+  </div>
+
+  <!-- Always available, not just after a failed auto-add — some wallets
+       (mobile ones especially) ignore wallet_addEthereumChain entirely, so
+       a first-time user needs a way to get here without one failing first. -->
+  <p style="text-align:center; margin: 0 0 var(--space-4);">
+    <button type="button" id="manualNetworkToggle" class="debug-log-toggle">Add BOT Chain to your wallet by hand</button>
+  </p>
+
+  <div id="manualNetworkPanel" class="manual-network-panel" hidden>
+    <p>If your wallet can't add the network automatically, enter these values yourself:</p>
+    <dl class="manual-network-fields">
+      <div class="manual-network-field">
+        <dt>Network name</dt>
+        <dd><span id="manualNetName"></span><button type="button" class="copy-btn" data-copy-target="manualNetName">Copy</button></dd>
+      </div>
+      <div class="manual-network-field">
+        <dt>RPC URL</dt>
+        <dd><span id="manualNetRpc"></span><button type="button" class="copy-btn" data-copy-target="manualNetRpc">Copy</button></dd>
+      </div>
+      <div class="manual-network-field">
+        <dt>Chain ID</dt>
+        <dd><span id="manualNetChainId"></span><button type="button" class="copy-btn" data-copy-target="manualNetChainId">Copy</button></dd>
+      </div>
+      <div class="manual-network-field">
+        <dt>Currency symbol</dt>
+        <dd><span id="manualNetSymbol"></span><button type="button" class="copy-btn" data-copy-target="manualNetSymbol">Copy</button></dd>
+      </div>
+      <div class="manual-network-field">
+        <dt>Explorer URL</dt>
+        <dd><span id="manualNetExplorer"></span><button type="button" class="copy-btn" data-copy-target="manualNetExplorer">Copy</button></dd>
+      </div>
+    </dl>
+    <p class="field-hint" id="manualNetCollisionWarning" hidden></p>
   </div>
 
   <div class="tabs">
@@ -839,6 +908,20 @@
   // ---- CONFIG: shared with index.html via config.js ----
   let CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
+
+  // Stable reference to this build's actual target network (testnet here,
+  // mainnet in a mainnet build). NETWORK_PARAMS above is captured once and
+  // never mutated, unlike window.LEGACY_VAULT_CONFIG.CHAIN_ID_HEX, which
+  // applyResolvedNetwork() overwrites on every successful connect (that's
+  // how dynamic network switching works — see that function). Onboarding a
+  // wallet onto a chain it doesn't have must always target the actual
+  // product network, never whatever a previous connection in this session
+  // happened to resolve to (e.g. local dev) — so ensureWalletHasChain() and
+  // the manual-add panel read from this, not the live/mutable config.
+  function getBuildTargetNetwork() {
+    const match = findNetworkForChainId(NETWORK_PARAMS.chainId);
+    return match ? match[1] : null;
+  }
 
   // ---- wallet connection debug log ----
   // "Connection declined" only reproduces on a real phone, where there's
@@ -1643,20 +1726,82 @@
     }
   }
 
+  // Classifies a wallet_switchEthereumChain/wallet_addEthereumChain
+  // rejection into one of two shapes handleConnectError knows how to show:
+  // the user explicitly said no (4001 — not a failure, just a "try again"),
+  // or something actually went wrong (any other code, or a wallet too old
+  // to support the RPC method at all). Wallets don't agree on where the
+  // code lives — MetaMask puts it at err.code, but some wrap it inside
+  // err.data.originalError.code — so both are checked.
+  function classifyChainOnboardingError(err) {
+    const code = err && (err.code ?? (err.data && err.data.originalError && err.data.originalError.code));
+    const wrapped = new Error((err && err.message) || 'Could not switch or add the network.');
+    if (code === 4001) {
+      wrapped.chainOnboardingDeclined = true;
+    } else {
+      wrapped.chainOnboardingFailed = true;
+      wrapped.chainOnboardingReason = (err && (err.reason || err.message)) || `error code ${code ?? 'unknown'}`;
+    }
+    return wrapped;
+  }
+
+  // Brings the wallet onto this build's target network when it's either on
+  // something else entirely or has never added this chain at all — those
+  // two cases are indistinguishable from eth_chainId alone, and this
+  // handles both the same way. Standard EIP-3085 sequence: ask to switch
+  // first (instant, single prompt, for a wallet that already knows the
+  // chain); only call wallet_addEthereumChain — which adds AND switches in
+  // one prompt — when switching fails specifically because the wallet
+  // doesn't recognize the chain (code 4902). Shows the Datagram-collision
+  // notice (config.NETWORKS[...].registryCollisionWarning) before either
+  // prompt fires, not after, since the wallet's own popup can otherwise
+  // cover this page entirely.
+  async function ensureWalletHasChain(eth) {
+    const target = getBuildTargetNetwork();
+    if (target && target.registryCollisionWarning) {
+      showWrongNetworkBanner(`Adding ${target.name} to your wallet — ${target.registryCollisionWarning}`);
+    }
+    try {
+      await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: NETWORK_PARAMS.chainId }] });
+      return;
+    } catch (switchErr) {
+      const code = switchErr && (switchErr.code ?? (switchErr.data && switchErr.data.originalError && switchErr.data.originalError.code));
+      if (code !== 4902) throw classifyChainOnboardingError(switchErr);
+    }
+    try {
+      await eth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
+    } catch (addErr) {
+      throw classifyChainOnboardingError(addErr);
+    }
+  }
+
   // Shared by both connect paths (AppKit and the direct bypass below) —
   // takes an already-resolved EIP-1193 provider, resolves which network
   // it's actually on, and wires up provider/signer/contract. Throws on
   // any failure; callers are responsible for the try/catch and UI
   // response (handleConnectError below covers both the same way).
   async function connectWithEth(eth) {
-    const chainIdHex = await eth.request({ method: 'eth_chainId' });
-    const match = findNetworkForChainId(chainIdHex);
+    let chainIdHex = await eth.request({ method: 'eth_chainId' });
+    let match = findNetworkForChainId(chainIdHex);
     console.log('[LegacyVault] wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(none — unrecognized chain)', 'known chains:', Object.fromEntries(Object.entries(window.LEGACY_VAULT_CONFIG.NETWORKS).map(([k, n]) => [k, n.chainIdHex])));
     if (!match) {
-      const err = new Error(`Wallet is on an unrecognized chain (${chainIdHex}).`);
-      err.unsupportedNetwork = true;
-      err.chainIdHex = chainIdHex;
-      throw err;
+      // First-time wallet, or one on some other chain entirely — try to
+      // bring it onto this build's network before giving up. A user who's
+      // never added BOT Chain should get one prompt, not a dead end.
+      await ensureWalletHasChain(eth);
+      chainIdHex = await eth.request({ method: 'eth_chainId' });
+      match = findNetworkForChainId(chainIdHex);
+      console.log('[LegacyVault] after add/switch attempt, wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(still none)');
+      if (!match) {
+        // The wallet reported success but is still elsewhere — some
+        // wallets silently no-op wallet_addEthereumChain instead of
+        // erroring. Point at the manual panel rather than loop forever.
+        const err = new Error('Wallet did not switch to the expected network.');
+        err.chainOnboardingFailed = true;
+        err.chainOnboardingReason = 'the wallet reported success but is still on a different network';
+        throw err;
+      }
+      hideWrongNetworkBanner(); // clears the registry-collision notice shown mid-attempt
     }
     const [netKey, netEntry] = match;
     if (!netEntry.contractAddress) {
@@ -1690,13 +1835,23 @@
     clearConnectionState();
     if (err.wrongChainRpc) {
       showWrongNetworkBanner();
-    } else if (err.unsupportedNetwork) {
-      const knowsLocal = !!window.LEGACY_VAULT_CONFIG.NETWORKS.local;
-      showWrongNetworkBanner(
-        `Wrong network — this wallet is on a chain Legacy Vault doesn't recognize (${err.chainIdHex}). ` +
-        `Switch to <strong>${window.LEGACY_VAULT_CONFIG.NETWORK_NAME}</strong>` +
-        (knowsLocal ? ` (or Localhost / chain 31337, if you're running the local dev node).` : `.`)
-      );
+    } else if (err.chainOnboardingDeclined) {
+      // 4001 on wallet_switchEthereumChain/wallet_addEthereumChain — the
+      // user said no to adding the network, not a real failure. Distinct
+      // from the generic error path so this never reads as something
+      // broken; retrying just means tapping Connect again.
+      const targetName = (getBuildTargetNetwork() || {}).name || window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+      showWrongNetworkBanner(`You declined adding ${targetName}. Tap Connect to try again.`);
+    } else if (err.chainOnboardingFailed) {
+      // Anything else — the wallet doesn't support wallet_addEthereumChain
+      // at all, rejected the params, or silently no-op'd. The manual panel
+      // is the real fallback here since we can't know why it failed for
+      // every wallet; opened automatically rather than making the user
+      // find the toggle themselves right after a failure.
+      const targetName = (getBuildTargetNetwork() || {}).name || window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
+      showWrongNetworkBanner(`Could not add ${targetName} to your wallet automatically (${err.chainOnboardingReason}). Add it by hand instead — see below.`);
+      $('manualNetworkPanel').hidden = false;
+      $('manualNetworkPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } else if (err.noContractOnNetwork) {
       showWrongNetworkBanner(`No LegacyVault contract is deployed on <strong>${err.networkName}</strong> yet.`);
     } else {
@@ -2321,6 +2476,44 @@
   $('directConnectRow').hidden = !window.LEGACY_VAULT_CONFIG.NETWORKS.local;
   $('ownerSeal').innerHTML = sealSVG('intact');
   loadConstraints();
+
+  // ---------- manual network entry (fallback + proactive add-by-hand) ----------
+  // Reads from the stable build target (NETWORK_PARAMS / getBuildTargetNetwork),
+  // not the live/mutable window.LEGACY_VAULT_CONFIG fields — see the comment
+  // on getBuildTargetNetwork() for why that distinction matters here.
+  function renderManualNetworkPanel() {
+    const target = getBuildTargetNetwork();
+    $('manualNetName').textContent = NETWORK_PARAMS.chainName;
+    $('manualNetRpc').textContent = NETWORK_PARAMS.rpcUrls[0];
+    $('manualNetChainId').textContent = String(parseInt(NETWORK_PARAMS.chainId, 16));
+    $('manualNetSymbol').textContent = NETWORK_PARAMS.nativeCurrency.symbol;
+    $('manualNetExplorer').textContent = (NETWORK_PARAMS.blockExplorerUrls && NETWORK_PARAMS.blockExplorerUrls[0]) || '';
+    const warning = target && target.registryCollisionWarning;
+    $('manualNetCollisionWarning').textContent = warning || '';
+    $('manualNetCollisionWarning').hidden = !warning;
+  }
+  renderManualNetworkPanel();
+
+  $('manualNetworkToggle').addEventListener('click', () => {
+    $('manualNetworkPanel').hidden = !$('manualNetworkPanel').hidden;
+  });
+
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const text = $(btn.dataset.copyTarget).textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = btn.textContent;
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1500);
+      } catch {
+        // Clipboard API unavailable (insecure context, older browser) — the
+        // value is still plain selectable text, so this just no-ops rather
+        // than showing an error for something that isn't actually broken.
+      }
+    });
+  });
 </script>
 </body>
 </html>
