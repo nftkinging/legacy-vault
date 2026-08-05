@@ -45,11 +45,21 @@
      below are the real measured size of the disconnected button in
      production, not a guess. */
   .wallet-compact > * { grid-area: 1 / 1; }
-  .wallet-skeleton {
+  /* Shared shell for both the AppKit-loading placeholder and the
+     immediately-clickable injected-wallet button — same size/colors so
+     swapping between any of walletSkeleton / injectedConnectBtn /
+     appkit-button is a pure opacity cross-fade, never a resize.
+     #injectedConnectBtn deliberately does NOT get the .wallet-skeleton
+     class itself below: that class is what .wallet-compact.is-ready fades
+     out once AppKit finishes loading, and injectedConnectBtn's whole
+     point is not depending on AppKit's readiness at all — sharing the
+     class would silently fade it out the moment AppKit became ready
+     behind the scenes, even though it was never waiting on that. */
+  .wallet-skeleton, #injectedConnectBtn {
     width: 116px; height: 40px;
     display: inline-flex; align-items: center; justify-content: center;
     background: var(--wax); color: var(--parchment-2);
-    border: none; border-radius: 2px; cursor: not-allowed;
+    border: none; border-radius: 2px;
     font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
     /* Every other <button> on the page is uppercased by the global
        `button { text-transform: uppercase }` rule in brand.css — this one
@@ -61,6 +71,9 @@
     text-transform: none;
     opacity: 1; transition: opacity var(--duration-state) var(--ease);
   }
+  .wallet-skeleton { cursor: not-allowed; }
+  #injectedConnectBtn { cursor: pointer; }
+  #injectedConnectBtn:hover { background: var(--wax-deep); }
   appkit-button { opacity: 0; transition: opacity var(--duration-state) var(--ease); }
   .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
 
@@ -420,13 +433,26 @@
     </a>
     <div class="wallet-compact" id="walletCompact">
       <button type="button" class="wallet-skeleton" id="walletSkeleton" disabled aria-hidden="true">Connect Wallet</button>
+      <!-- Shown instead of (never alongside) <appkit-button> whenever
+           window.ethereum exists — desktop extensions AND mobile wallet
+           in-app browsers (MetaMask Mobile's etc.) both inject it.
+           AppKit's own connect() was found to perform its own internal
+           network-reconciliation switch and ABORT THE WHOLE CONNECTION if
+           that fails — confirmed on-device: appkit:CONNECT_ERROR
+           "EthersAdapter:connect - Switch network failed", with our own
+           ensureWalletHasChain() never even running. This button calls
+           connectDirect() instead, which never goes near AppKit's
+           connect() at all. No async wait needed either — unlike
+           <appkit-button>, which pops in after its module loads from
+           esm.sh, window.ethereum is available synchronously, so this can
+           just be enabled immediately. -->
+      <button type="button" id="injectedConnectBtn" hidden>Connect Wallet</button>
       <appkit-button balance="show"></appkit-button>
-      <!-- connectDirect() bypasses AppKit entirely, so <appkit-button> has
-           no way to know that connection happened — it would otherwise
-           keep showing "Connect Wallet" forever despite a working
-           connection. This is our own minimal connected-state UI for that
-           path specifically, shown instead of (never alongside)
-           <appkit-button>. -->
+      <!-- Connected-state UI for both bypass paths above (connectDirect()
+           via injectedConnectBtn, or the local-dev directConnectBtn) —
+           neither ever tells AppKit anything happened, so <appkit-button>
+           has no way to reflect it; this is shown instead, never
+           alongside. -->
       <div class="direct-connect-pill" id="directConnectPill" hidden>
         <span id="directConnectAddr"></span>
         <button type="button" id="directDisconnectBtn">Disconnect</button>
@@ -760,7 +786,7 @@
   // one, so the modal's network switcher works regardless of which chain
   // config.js currently points at.
   import { createAppKit } from 'https://esm.sh/@reown/appkit@1.8.23';
-  import { defineChain } from 'https://esm.sh/@reown/appkit@1.8.23/networks';
+  import { defineChain, mainnet as ethereumMainnet } from 'https://esm.sh/@reown/appkit@1.8.23/networks';
   import { EthersAdapter } from 'https://esm.sh/@reown/appkit-adapter-ethers@1.8.23';
 
   const cfg = window.LEGACY_VAULT_CONFIG;
@@ -799,7 +825,22 @@
   try {
     const appKit = createAppKit({
       adapters: [new EthersAdapter()],
-      networks: [activeNetwork, ...otherNetworks],
+      // Ethereum mainnet included purely so AppKit's own EthersAdapter has
+      // a real, recognized chain to reconcile against during connect() —
+      // confirmed live (on-device debug log) that its internal
+      // "Switch network failed" during connect ABORTS THE WHOLE
+      // CONNECTION, before our own onboarding code ever runs, when the
+      // wallet is on a chain outside its networks list (appkit:INITIALIZE
+      // showed only [968, 677] — so a fresh wallet defaulting to Ethereum,
+      // the single most common case, always hit this). This only helps
+      // the one path that still goes through AppKit's connect() at all
+      // (see the injected-wallet bypass below) — a WalletConnect session
+      // with no injected provider. It doesn't make Ethereum a usable
+      // network for this app; findNetworkForChainId() still only
+      // recognizes what's in config.NETWORKS, so a wallet that stays on
+      // Ethereum after connecting still correctly falls through to our
+      // own ensureWalletHasChain() onboarding.
+      networks: [activeNetwork, ...otherNetworks, ethereumMainnet],
       // defaultNetwork deliberately omitted: with it set, AppKit was
       // actively calling wallet_switchEthereumChain toward it on every
       // connect — confirmed live (chainChanged fires 0x7a69 on disconnect,
@@ -1787,15 +1828,21 @@
   function renderDirectConnectPill() {
     const pill = $('directConnectPill');
     const appKitBtn = document.querySelector('appkit-button');
+    const hasInjected = typeof window.ethereum !== 'undefined';
     if (usingDirectConnect && myAddress) {
       pill.hidden = false;
       $('directConnectAddr').textContent = short(myAddress);
       $('walletSkeleton').style.display = 'none';
+      $('injectedConnectBtn').style.display = 'none';
       if (appKitBtn) appKitBtn.style.display = 'none';
     } else {
       pill.hidden = true;
-      $('walletSkeleton').style.display = '';
-      if (appKitBtn) appKitBtn.style.display = '';
+      // Restore whichever button is the actual primary path for this
+      // wallet — injectedConnectBtn if window.ethereum exists (the normal
+      // case now), walletSkeleton/appkit-button only when it doesn't.
+      $('walletSkeleton').style.display = hasInjected ? 'none' : '';
+      $('injectedConnectBtn').style.display = hasInjected ? '' : 'none';
+      if (appKitBtn) appKitBtn.style.display = hasInjected ? 'none' : '';
     }
   }
 
@@ -2025,6 +2072,20 @@
     clearConnectionState();
     hideWrongNetworkBanner();
   });
+
+  // Primary connect path for any injected wallet — see the comment on
+  // #injectedConnectBtn in the header markup for why this exists at all
+  // (AppKit's connect() aborting the whole connection on its own internal
+  // switch failure). Runs synchronously at load, no AppKit readiness wait
+  // needed: window.ethereum is either there or it isn't from the moment
+  // the page parses.
+  if (typeof window.ethereum !== 'undefined') {
+    const appKitBtn = document.querySelector('appkit-button');
+    if (appKitBtn) appKitBtn.style.display = 'none';
+    $('walletSkeleton').style.display = 'none';
+    $('injectedConnectBtn').hidden = false;
+    $('injectedConnectBtn').addEventListener('click', connectDirect);
+  }
 
   // AppKit's subscribeCaipNetworkChange only fires for switches AppKit
   // itself initiated (its own network-switcher UI). A user switching
