@@ -72,9 +72,24 @@
     opacity: 1; transition: opacity var(--duration-state) var(--ease);
   }
   .wallet-skeleton { cursor: not-allowed; }
+  /* Set once AppKit never comes up in time (timeout) or fails outright
+     (module load error, or a synchronous throw inside it) — the skeleton
+     stops being an inert placeholder and becomes the actual recovery
+     action. See legacyvault:appkit-timeout / legacyvault:appkit-error
+     below. */
+  .wallet-skeleton.is-actionable { cursor: pointer; }
+  .wallet-skeleton.is-actionable:hover { background: var(--wax-deep); }
   #injectedConnectBtn { cursor: pointer; }
   #injectedConnectBtn:hover { background: var(--wax-deep); }
-  appkit-button { opacity: 0; transition: opacity var(--duration-state) var(--ease); }
+  /* pointer-events: none until is-ready is set below is deliberate, not
+     redundant with opacity — a same-grid-cell sibling later in source
+     order (this one) paints ABOVE walletSkeleton regardless of opacity,
+     and once the custom element upgrades (its module registers it) it
+     can intercept taps meant for the visible skeleton beneath it even
+     while invisible. Confirmed as a real risk, not just theoretical, by
+     reading the actual stacking (.wallet-compact > * all share one grid
+     cell, no z-index — later DOM order wins ties). */
+  appkit-button { opacity: 0; pointer-events: none; transition: opacity var(--duration-state) var(--ease); }
   .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
 
   .direct-connect-pill {
@@ -104,7 +119,7 @@
     padding: 2px 6px; border-radius: 2px; cursor: pointer;
   }
   .direct-connect-pill button:hover { background: rgba(255,255,255,0.15); }
-  .wallet-compact.is-ready appkit-button { opacity: 1; }
+  .wallet-compact.is-ready appkit-button { opacity: 1; pointer-events: auto; }
 
   .local-dev-banner[hidden] { display: none; }
   .local-dev-banner {
@@ -787,6 +802,106 @@
 
 <script src="config.js"></script>
 <script>
+  // Earliest possible diagnostics — deliberately the very first script
+  // after config.js, before anything that could itself throw. Found on
+  // real devices: Connect Wallet doing nothing at all for a first-time
+  // visitor, worse on mobile generally. The real debug-log panel further
+  // down in this file can't catch a crash that happens before IT
+  // finishes initializing — if some earlier statement in this page
+  // throws, everything after it in the same script block (including the
+  // click-handler wiring) never runs, silently. This buffers uncaught
+  // errors/rejections from the first possible moment and flushes them
+  // into the real panel once it exists (see window.__wcLog below), so a
+  // crash anywhere on the page — not just after the debug system is
+  // ready — still shows up under ?debug=1.
+  window.__earlyDiagnostics = [];
+  window.__recordEarly = function (label, data) {
+    window.__earlyDiagnostics.push({ t: Date.now(), label, data });
+    if (window.__wcLog) window.__wcLog(label, data);
+  };
+  window.addEventListener('error', function (e) {
+    window.__recordEarly('uncaught:error', {
+      message: e.message, source: e.filename, line: e.lineno, col: e.colno,
+      stack: e.error && e.error.stack,
+    });
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    window.__recordEarly('uncaught:rejection', {
+      reason: e.reason && (e.reason.message || String(e.reason)),
+      stack: e.reason && e.reason.stack,
+    });
+  });
+  // Fires after the whole document (and its sub-resources) finishes
+  // loading, completely independent of whether any of our own script
+  // blocks crashed partway through — this is what answers "which of the
+  // three connect elements is actually visible" even if the code that
+  // was SUPPOSED to set that up never got there.
+  window.addEventListener('load', function () {
+    try {
+      var ws = document.getElementById('walletSkeleton');
+      var icb = document.getElementById('injectedConnectBtn');
+      var akb = document.querySelector('appkit-button');
+      var cs = function (el) { return el ? getComputedStyle(el).display : 'MISSING'; };
+      window.__recordEarly('connect-ui:load-snapshot', {
+        hasInjectedWallet: typeof window.ethereum !== 'undefined',
+        userAgent: navigator.userAgent,
+        walletSkeleton: { present: !!ws, hiddenAttr: ws ? ws.hidden : null, computedDisplay: cs(ws) },
+        injectedConnectBtn: { present: !!icb, hiddenAttr: icb ? icb.hidden : null, computedDisplay: cs(icb) },
+        appkitButton: { present: !!akb, computedDisplay: cs(akb) },
+      });
+    } catch (err) {
+      window.__recordEarly('connect-ui:load-snapshot:error', { message: err.message, stack: err.stack });
+    }
+  });
+
+  // AppKit ships as a module loaded straight off esm.sh (see the
+  // type="module" script further down) — its own import statements sit
+  // OUTSIDE that module's try/catch (imports execute before any of a
+  // module's own code runs), so a blocked/slow/failed esm.sh fetch means
+  // the module body never executes at all: legacyvault:appkit-error is
+  // dispatched from INSIDE that try/catch, so it never fires either.
+  // Confirmed by reading the actual code, not assumed. Result before this
+  // fix: walletSkeleton — which is HTML `disabled` from the moment it's
+  // rendered — never becomes usable, and nothing ever tells the user
+  // anything is wrong. This is the actual fallback: if neither
+  // legacyvault:appkit-ready nor legacyvault:appkit-error shows up within
+  // APPKIT_TIMEOUT_MS, treat it as failed and make the skeleton itself
+  // the recovery action instead of a permanently dead control.
+  var APPKIT_TIMEOUT_MS = 6000;
+  window.__appKitSettled = false;
+  window.addEventListener('legacyvault:appkit-ready', function () { window.__appKitSettled = true; });
+  window.addEventListener('legacyvault:appkit-error', function () { window.__appKitSettled = true; });
+  setTimeout(function () {
+    if (window.__appKitSettled) return;
+    window.__recordEarly('appkit:timeout', { waitedMs: APPKIT_TIMEOUT_MS });
+    window.dispatchEvent(new Event('legacyvault:appkit-timeout'));
+  }, APPKIT_TIMEOUT_MS);
+
+  // Turns the skeleton from an inert loading placeholder into the actual
+  // recovery action — used by both the timeout above and the (existing,
+  // previously dead-ended) appkit-error handler further down. A reload is
+  // the honest fix here rather than attempting an in-place re-import:
+  // AppKit is genuinely required for anyone without an injected wallet
+  // (no alternative to WalletConnect exists for that case), so "try
+  // again" has to mean actually trying again, not pretending to recover
+  // in place. No-ops entirely when an injected wallet is present —
+  // injectedConnectBtn is already the working, independent path there,
+  // and walletSkeleton stays hidden regardless of what AppKit does.
+  window.__makeWalletSkeletonActionable = function (message) {
+    if (typeof window.ethereum !== 'undefined') return;
+    var skeleton = document.getElementById('walletSkeleton');
+    if (!skeleton) return;
+    skeleton.disabled = false;
+    skeleton.textContent = message;
+    skeleton.setAttribute('aria-hidden', 'false');
+    skeleton.classList.add('is-actionable');
+    skeleton.onclick = function () { location.reload(); };
+  };
+  window.addEventListener('legacyvault:appkit-timeout', function () {
+    window.__makeWalletSkeletonActionable('Reload to connect');
+  });
+</script>
+<script>
   // Local-dev-only, generated by scripts/deploy-local.js — never touches
   // the committed config.js (testnet/mainnet). Always attempted, not
   // gated behind a query param: on a real deploy this file simply doesn't
@@ -810,7 +925,7 @@
 </script>
 <script src="beneficiary-crypto.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
-<script type="module">
+<script type="module" id="appKitModuleScript" onerror="window.__recordEarly && window.__recordEarly('appkit-module:load-error', { src: this.src }); window.dispatchEvent(new Event('legacyvault:appkit-error'));">
   // Wallet connection via Reown AppKit — <appkit-button> in the header IS
   // the connect/account/disconnect/network-switch UI; there is no custom
   // picker anymore. Loaded straight off esm.sh (no bundler — the official
@@ -1064,6 +1179,12 @@
     console.log(`[wallet ${line.t}ms] ${label}`, data !== undefined ? data : '');
     renderWalletDebugLog();
   };
+  // Anything captured by the super-early handlers (top of <head>, right
+  // after config.js) before this point existed — flush it in now so a
+  // crash from before the debug system was ready still shows up here.
+  if (window.__earlyDiagnostics && window.__earlyDiagnostics.length) {
+    window.__earlyDiagnostics.forEach(e => window.__wcLog(e.label, e.data));
+  }
   document.getElementById('debugLogToggle').addEventListener('click', () => {
     const panel = document.getElementById('debugLogPanel');
     panel.hidden = !panel.hidden;
@@ -1188,8 +1309,13 @@
     });
   });
   window.addEventListener('legacyvault:appkit-error', () => {
-    const skeleton = document.getElementById('walletSkeleton');
-    skeleton.textContent = 'Wallet unavailable';
+    window.__wcLog && window.__wcLog('appkit-error', { message: window.__legacyVaultAppKitError && window.__legacyVaultAppKitError.message });
+    // Used to just change the skeleton's text to "Wallet unavailable" and
+    // stop there — but the skeleton is HTML `disabled` from the moment
+    // it's rendered, so that was a dead end with a slightly more
+    // informative label, not an actual fallback. Same recovery action as
+    // the timeout case now.
+    window.__makeWalletSkeletonActionable('Reload to connect');
   });
 
   // ABI matches the hardened contract (contracts/LegacyVault.sol) — `message`
@@ -1934,6 +2060,7 @@
   // prompt fires, not after, since the wallet's own popup can otherwise
   // cover this page entirely.
   async function ensureWalletHasChain(eth) {
+    window.__wcLog && window.__wcLog('ensureWalletHasChain:start');
     const target = getBuildTargetNetwork();
     if (target && target.registryCollisionWarning) {
       showWrongNetworkBanner(`Adding ${target.name} to your wallet — ${target.registryCollisionWarning}`);
@@ -1968,9 +2095,12 @@
   // any failure; callers are responsible for the try/catch and UI
   // response (handleConnectError below covers both the same way).
   async function connectWithEth(eth) {
+    window.__wcLog && window.__wcLog('connectWithEth:start');
     let chainIdHex = await eth.request({ method: 'eth_chainId' });
     let match = findNetworkForChainId(chainIdHex);
-    console.log('[LegacyVault] wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(none — unrecognized chain)', 'known chains:', Object.fromEntries(Object.entries(window.LEGACY_VAULT_CONFIG.NETWORKS).map(([k, n]) => [k, n.chainIdHex])));
+    const knownChains = Object.fromEntries(Object.entries(window.LEGACY_VAULT_CONFIG.NETWORKS).map(([k, n]) => [k, n.chainIdHex]));
+    console.log('[LegacyVault] wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(none — unrecognized chain)', 'known chains:', knownChains);
+    window.__wcLog && window.__wcLog('connectWithEth:chain-check', { chainIdHex, matched: match ? match[0] : null, knownChains });
     if (!match) {
       // First-time wallet, or one on some other chain entirely — try to
       // bring it onto this build's network before giving up. A user who's
@@ -1979,6 +2109,7 @@
       chainIdHex = await eth.request({ method: 'eth_chainId' });
       match = findNetworkForChainId(chainIdHex);
       console.log('[LegacyVault] after add/switch attempt, wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(still none)');
+      window.__wcLog && window.__wcLog('connectWithEth:post-onboarding-chain-check', { chainIdHex, matched: match ? match[0] : null });
       if (!match) {
         // The wallet reported success but is still elsewhere — some
         // wallets silently no-op wallet_addEthereumChain instead of
@@ -1993,6 +2124,7 @@
     const [netKey, netEntry] = match;
     if (!netEntry.contractAddress) {
       console.log('[LegacyVault] matched', netKey, 'but it has no contractAddress configured');
+      window.__wcLog && window.__wcLog('connectWithEth:no-contract-on-network', { netKey });
       const err = new Error(`No LegacyVault contract deployed on ${netEntry.name} yet.`);
       err.noContractOnNetwork = true;
       err.networkName = netEntry.name;
@@ -2002,6 +2134,7 @@
     await verifyGenuineBotChain(eth, netEntry);
     applyResolvedNetwork(netKey, netEntry);
     console.log('[LegacyVault] applied network:', netKey, '— CONTRACT_ADDRESS is now', CONTRACT_ADDRESS, '— NETWORK_NAME is now', window.LEGACY_VAULT_CONFIG.NETWORK_NAME);
+    window.__wcLog && window.__wcLog('connectWithEth:applied-network', { netKey, contractAddress: CONTRACT_ADDRESS });
 
     provider = new ethers.BrowserProvider(eth);
     signer = await provider.getSigner();
@@ -2104,19 +2237,29 @@
   // adopting whatever chain it's already on — this sidesteps that
   // completely rather than depending on a fix to AppKit's behavior.
   async function connectDirect() {
+    // First line, unconditionally — confirms the click handler actually
+    // fired at all, before anything else has a chance to throw or return
+    // early. If a debug capture is missing even this line, the click
+    // never reached this function (element hidden/covered/no listener),
+    // not a failure inside it.
+    window.__wcLog && window.__wcLog('connectDirect:invoked', { isMetaMask: window.ethereum && window.ethereum.isMetaMask, providers: window.ethereum && Array.isArray(window.ethereum.providers) ? window.ethereum.providers.length : undefined });
     if (typeof window.ethereum === 'undefined') {
+      window.__wcLog && window.__wcLog('connectDirect:no-injected-wallet');
       note($('createMsg'), 'No injected wallet found — window.ethereum is undefined. Direct connect needs a browser extension wallet (e.g. MetaMask).', 'err');
       return;
     }
     hideWrongNetworkBanner();
     try {
+      window.__wcLog && window.__wcLog('eth_requestAccounts:call');
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      window.__wcLog && window.__wcLog('eth_requestAccounts:ok', { accounts });
       if (!accounts || !accounts[0]) throw new Error('No account returned by wallet.');
       const netKey = await connectWithEth(window.ethereum);
       usingDirectConnect = true;
       renderDirectConnectPill();
       window.__wcLog && window.__wcLog('account:ready (direct)', { address: myAddress, network: netKey });
     } catch (err) {
+      window.__wcLog && window.__wcLog('connectDirect:error', plainifyError(err));
       handleConnectError(err);
     }
   }
@@ -2136,12 +2279,28 @@
   // switch failure). Runs synchronously at load, no AppKit readiness wait
   // needed: window.ethereum is either there or it isn't from the moment
   // the page parses.
+  window.__recordEarly('connect-ui:before-injected-setup', { hasInjectedWallet: typeof window.ethereum !== 'undefined' });
   if (typeof window.ethereum !== 'undefined') {
-    const appKitBtn = document.querySelector('appkit-button');
-    if (appKitBtn) appKitBtn.style.display = 'none';
-    $('walletSkeleton').style.display = 'none';
-    $('injectedConnectBtn').hidden = false;
-    $('injectedConnectBtn').addEventListener('click', connectDirect);
+    try {
+      const appKitBtn = document.querySelector('appkit-button');
+      if (appKitBtn) appKitBtn.style.display = 'none';
+      $('walletSkeleton').style.display = 'none';
+      $('injectedConnectBtn').hidden = false;
+      $('injectedConnectBtn').addEventListener('click', connectDirect);
+      window.__recordEarly('connect-ui:injected-setup-complete', {
+        walletSkeletonDisplay: getComputedStyle($('walletSkeleton')).display,
+        injectedConnectBtnHidden: $('injectedConnectBtn').hidden,
+        appkitButtonDisplay: appKitBtn ? getComputedStyle(appKitBtn).display : 'not found',
+      });
+    } catch (err) {
+      // Never silently swallow this — if setup for the primary connect
+      // path itself throws, that IS the dead-button bug, and needs to be
+      // both logged AND re-thrown so it isn't hidden from the console too.
+      window.__recordEarly('connect-ui:injected-setup-error', { message: err.message, stack: err.stack });
+      throw err;
+    }
+  } else {
+    window.__recordEarly('connect-ui:no-injected-wallet', {});
   }
 
   // AppKit's subscribeCaipNetworkChange only fires for switches AppKit
