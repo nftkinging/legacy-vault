@@ -44,3 +44,22 @@ requiring them to acquire BOT before they can receive BOT. Not scoped for
 the current mainnet launch — noted here so it isn't lost, and so "beneficiary
 claims successfully" isn't assumed solved just because the testnet warning
 exists.
+
+---
+
+## Chain quirk — baseFeePerGas present but legacy-only (testnet)
+
+BOT Chain reports baseFeePerGas: "0x0" in block headers (present, not
+absent) while every mined transaction is type-0 legacy. That combination
+misleads wallet SDKs into building EIP-1559 transactions the chain
+doesn't process — the suspected cause of "transaction rejected on-chain
+without a reason" when sealing. Mitigated by forcing an explicit
+gasPrice override on all 8 write calls.
+
+Two follow-ups to note:
+1. Worth reporting to the BOT Chain team — a chain without EIP-1559
+   support shouldn't advertise a baseFeePerGas field, since that's what
+   every wallet and library uses to detect it.
+2. Check whether mainnet (chain 677) has the same quirk BEFORE deploying.
+   If it does, the same override is needed. If mainnet genuinely supports
+   EIP-1559, forcing legacy gas could overpay or fail.

@@ -12,8 +12,8 @@
 <link rel="stylesheet" href="brand.css">
 <!-- Wallet connection (Reown AppKit) loads from esm.sh at runtime — warm the
      connection and start fetching the top-level modules as early as
-     possible so <appkit-button> upgrades sooner instead of popping in
-     seconds after the rest of the page has already settled. -->
+     possible so its modal is ready by the time anyone without an injected
+     wallet actually taps Connect. -->
 <link rel="preconnect" href="https://esm.sh" crossorigin>
 <link rel="modulepreload" href="https://esm.sh/@reown/appkit@1.8.23">
 <link rel="modulepreload" href="https://esm.sh/@reown/appkit@1.8.23/networks">
@@ -37,60 +37,23 @@
     display: grid; justify-items: end; align-items: center;
     min-width: 116px; min-height: 40px;
   }
-  /* <appkit-button> is an undefined custom element until its module loads
-     from esm.sh — with no reserved size of its own, it pops in seconds
-     after load and shoves the header sideways. Both sit in the same grid
-     cell (stacked, not side by side) so swapping one for the other is a
-     pure opacity cross-fade at a fixed size — never a resize. Dimensions
-     below are the real measured size of the disconnected button in
-     production, not a guess. */
+  /* connectBtn and the connected-state pill share one grid cell (stacked,
+     not side by side) so swapping between them at connect/disconnect is a
+     pure visibility toggle, never a resize. */
   .wallet-compact > * { grid-area: 1 / 1; }
-  /* Shared shell for both the AppKit-loading placeholder and the
-     immediately-clickable injected-wallet button — same size/colors so
-     swapping between any of walletSkeleton / injectedConnectBtn /
-     appkit-button is a pure opacity cross-fade, never a resize.
-     #injectedConnectBtn deliberately does NOT get the .wallet-skeleton
-     class itself below: that class is what .wallet-compact.is-ready fades
-     out once AppKit finishes loading, and injectedConnectBtn's whole
-     point is not depending on AppKit's readiness at all — sharing the
-     class would silently fade it out the moment AppKit became ready
-     behind the scenes, even though it was never waiting on that. */
-  .wallet-skeleton, #injectedConnectBtn {
+  /* One button, always clickable, regardless of wallet/device — it never
+     waits on AppKit's module load, so there's no placeholder/skeleton
+     state to cross-fade out of. Click handling branches internally
+     (injected wallet vs AppKit's modal); the user only ever sees this. */
+  #connectBtn {
     width: 116px; height: 40px;
     display: inline-flex; align-items: center; justify-content: center;
     background: var(--wax); color: var(--parchment-2);
-    border: none; border-radius: 2px;
+    border: none; border-radius: 2px; cursor: pointer;
     font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
-    /* Every other <button> on the page is uppercased by the global
-       `button { text-transform: uppercase }` rule in brand.css — this one
-       must opt out, since AppKit's real button (sealed inside a shadow
-       root, so that global rule can't reach it) renders mixed-case
-       "Connect Wallet". Without this override the skeleton read "CONNECT
-       WALLET" while the real button read "Connect Wallet" — a visible
-       mismatch at the swap. */
     text-transform: none;
-    opacity: 1; transition: opacity var(--duration-state) var(--ease);
   }
-  .wallet-skeleton { cursor: not-allowed; }
-  /* Set once AppKit never comes up in time (timeout) or fails outright
-     (module load error, or a synchronous throw inside it) — the skeleton
-     stops being an inert placeholder and becomes the actual recovery
-     action. See legacyvault:appkit-timeout / legacyvault:appkit-error
-     below. */
-  .wallet-skeleton.is-actionable { cursor: pointer; }
-  .wallet-skeleton.is-actionable:hover { background: var(--wax-deep); }
-  #injectedConnectBtn { cursor: pointer; }
-  #injectedConnectBtn:hover { background: var(--wax-deep); }
-  /* pointer-events: none until is-ready is set below is deliberate, not
-     redundant with opacity — a same-grid-cell sibling later in source
-     order (this one) paints ABOVE walletSkeleton regardless of opacity,
-     and once the custom element upgrades (its module registers it) it
-     can intercept taps meant for the visible skeleton beneath it even
-     while invisible. Confirmed as a real risk, not just theoretical, by
-     reading the actual stacking (.wallet-compact > * all share one grid
-     cell, no z-index — later DOM order wins ties). */
-  appkit-button { opacity: 0; pointer-events: none; transition: opacity var(--duration-state) var(--ease); }
-  .wallet-compact.is-ready .wallet-skeleton { opacity: 0; pointer-events: none; }
+  #connectBtn:hover { background: var(--wax-deep); }
 
   .direct-connect-pill {
     display: inline-flex; align-items: center; gap: var(--space-3);
@@ -119,7 +82,6 @@
     padding: 2px 6px; border-radius: 2px; cursor: pointer;
   }
   .direct-connect-pill button:hover { background: rgba(255,255,255,0.15); }
-  .wallet-compact.is-ready appkit-button { opacity: 1; pointer-events: auto; }
 
   .local-dev-banner[hidden] { display: none; }
   .local-dev-banner {
@@ -281,38 +243,6 @@
   .copy-btn.copied { color: var(--ok); border-color: var(--ok); }
   #manualNetCollisionWarning[hidden] { display: none; }
   #manualNetCollisionWarning { margin-top: var(--space-3); }
-
-  /* Deliberately quiet — muted text, no border, no background — the
-     opposite treatment of .wrong-network-banner. This is "here's a fact,
-     carry on," not "something is wrong, fix it." */
-  .chain-mismatch-note[hidden] { display: none; }
-  .chain-mismatch-note {
-    text-align: center; color: var(--muted);
-    font-family: var(--font-data); font-size: var(--text-xs); line-height: 1.6;
-    margin: 0 0 var(--space-6);
-  }
-
-  /* ---------- no-injected-wallet deep-link panel ---------- */
-  .no-wallet-panel[hidden] { display: none; }
-  .no-wallet-panel {
-    background: var(--parchment-3);
-    border: 1px solid var(--rule);
-    border-radius: 2px;
-    padding: var(--space-4) var(--space-5);
-    margin: 0 0 var(--space-6);
-    font-family: var(--font-data); font-size: var(--text-xs); line-height: 1.6;
-  }
-  .no-wallet-panel > p:first-child { margin: 0 0 var(--space-3); color: var(--text); }
-  .wallet-deep-links { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-3); }
-  .wallet-deep-link {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: var(--space-2) var(--space-4);
-    background: var(--wax); color: var(--parchment-2);
-    border-radius: 2px; text-decoration: none;
-    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
-  }
-  .wallet-deep-link:hover { background: var(--wax-deep); }
-  #noWalletUrl { word-break: break-all; margin-right: var(--space-2); color: var(--text); }
 
   /* ---------- claim-side gas warning ---------- */
   .gas-warning[hidden] { display: none; }
@@ -504,27 +434,23 @@
       <span class="word">Legacy Vault</span>
     </a>
     <div class="wallet-compact" id="walletCompact">
-      <button type="button" class="wallet-skeleton" id="walletSkeleton" disabled aria-hidden="true">Connect Wallet</button>
-      <!-- Shown instead of (never alongside) <appkit-button> whenever
-           window.ethereum exists — desktop extensions AND mobile wallet
-           in-app browsers (MetaMask Mobile's etc.) both inject it.
-           AppKit's own connect() was found to perform its own internal
-           network-reconciliation switch and ABORT THE WHOLE CONNECTION if
-           that fails — confirmed on-device: appkit:CONNECT_ERROR
-           "EthersAdapter:connect - Switch network failed", with our own
-           ensureWalletHasChain() never even running. This button calls
-           connectDirect() instead, which never goes near AppKit's
-           connect() at all. No async wait needed either — unlike
-           <appkit-button>, which pops in after its module loads from
-           esm.sh, window.ethereum is available synchronously, so this can
-           just be enabled immediately. -->
-      <button type="button" id="injectedConnectBtn" hidden>Connect Wallet</button>
-      <appkit-button balance="show"></appkit-button>
-      <!-- Connected-state UI for both bypass paths above (connectDirect()
-           via injectedConnectBtn, or the local-dev directConnectBtn) —
-           neither ever tells AppKit anything happened, so <appkit-button>
-           has no way to reflect it; this is shown instead, never
-           alongside. -->
+      <!-- One button, everywhere. It never waits on AppKit's module load —
+           always enabled, clickable the instant the page parses. Its click
+           handler (below) branches internally: an injected wallet
+           (extension, or a wallet app's in-app browser) connects directly,
+           bypassing AppKit's own connect() entirely — that path was found
+           to perform its own internal network-reconciliation switch and
+           ABORT THE WHOLE CONNECTION if that fails (confirmed on-device:
+           appkit:CONNECT_ERROR "EthersAdapter:connect - Switch network
+           failed", with our own ensureWalletHasChain() never even
+           running). With no injected wallet, it opens AppKit's own modal
+           (WalletConnect + wallet list) instead. The user never sees which
+           path ran. -->
+      <button type="button" id="connectBtn">Connect Wallet</button>
+      <appkit-button style="display:none"></appkit-button>
+      <!-- Connected-state UI for both paths above (connectDirect() or an
+           AppKit/WalletConnect session) — neither shows appkit-button's own
+           connected UI, so this stands in for both, never alongside it. -->
       <div class="direct-connect-pill" id="directConnectPill" hidden>
         <div class="direct-connect-info">
           <span id="directConnectBalance" class="direct-connect-balance"></span>
@@ -534,30 +460,6 @@
       </div>
     </div>
   </header>
-
-  <!-- Shown only when there's no injected wallet at all (no window.ethereum
-       — a plain mobile browser, or desktop with no extension) — the case
-       injectedConnectBtn can't cover, since there's nothing for it to talk
-       to. Primary path here is a deep link into a wallet app's own
-       in-app browser (which injects window.ethereum once you're actually
-       inside it, so the rest of this page's normal flow just works from
-       there). <appkit-button> in the header keeps working as-is — this
-       doesn't hide or disable it, it just stops being the first, biggest
-       thing offered. -->
-  <div id="noWalletPanel" class="no-wallet-panel" hidden>
-    <p>No wallet found in this browser. If you're on your phone, open this page inside your wallet app's own browser instead:</p>
-    <div class="wallet-deep-links">
-      <a id="deepLinkMetaMask" class="wallet-deep-link" target="_blank" rel="noopener">MetaMask</a>
-      <a id="deepLinkTrust" class="wallet-deep-link" target="_blank" rel="noopener">Trust Wallet</a>
-      <a id="deepLinkRainbow" class="wallet-deep-link" target="_blank" rel="noopener">Rainbow</a>
-      <a id="deepLinkZerion" class="wallet-deep-link" target="_blank" rel="noopener">Zerion</a>
-    </div>
-    <p class="field-hint">
-      Rainbow and Zerion don't support opening this exact page directly — open the app, find its built-in browser, and paste this address:
-      <span id="noWalletUrl"></span><button type="button" class="copy-btn" data-copy-target="noWalletUrl">Copy</button>
-    </p>
-    <p class="field-hint">Or connect from here via WalletConnect using the button in the top right — a secondary option, since it depends on the wallet app supporting it.</p>
-  </div>
 
   <div id="localDevBanner" class="local-dev-banner" hidden>
     LOCAL DEV — Hardhat node, chain 31337. Not real funds, not the deployed testnet/mainnet contract.
@@ -619,15 +521,6 @@
     <p class="field-hint" id="manualNetCollisionWarning" hidden></p>
   </div>
 
-  <!-- Shown whenever the wallet is connected but on a different network —
-       deliberately quiet (not the wax-red wrongNetworkBanner above, which
-       is now reserved for an actual failed switch/add attempt mid-action).
-       Connecting never blocks on chain anymore; this just says so, and
-       every action button below still works — pressing one is what
-       prompts the switch, at the moment it actually matters. -->
-  <p id="chainMismatchNote" class="chain-mismatch-note" hidden>
-    Connected, but your wallet is on a different network right now. You can look around freely — we'll prompt you to switch when you take an action that needs it (seal, check in, deposit, withdraw, change beneficiary, close, or claim).
-  </p>
 
   <div class="tabs">
     <button class="tab active" id="tabLeave">Leave a legacy</button>
@@ -899,72 +792,20 @@
   });
   // Fires after the whole document (and its sub-resources) finishes
   // loading, completely independent of whether any of our own script
-  // blocks crashed partway through — this is what answers "which of the
-  // three connect elements is actually visible" even if the code that
-  // was SUPPOSED to set that up never got there.
+  // blocks crashed partway through — confirms the connect button is
+  // actually present and clickable even if the code that was SUPPOSED to
+  // wire it up never got there.
   window.addEventListener('load', function () {
     try {
-      var ws = document.getElementById('walletSkeleton');
-      var icb = document.getElementById('injectedConnectBtn');
-      var akb = document.querySelector('appkit-button');
-      var cs = function (el) { return el ? getComputedStyle(el).display : 'MISSING'; };
+      var btn = document.getElementById('connectBtn');
       window.__recordEarly('connect-ui:load-snapshot', {
         hasInjectedWallet: typeof window.ethereum !== 'undefined',
         userAgent: navigator.userAgent,
-        walletSkeleton: { present: !!ws, hiddenAttr: ws ? ws.hidden : null, computedDisplay: cs(ws) },
-        injectedConnectBtn: { present: !!icb, hiddenAttr: icb ? icb.hidden : null, computedDisplay: cs(icb) },
-        appkitButton: { present: !!akb, computedDisplay: cs(akb) },
+        connectBtn: { present: !!btn, computedDisplay: btn ? getComputedStyle(btn).display : 'MISSING' },
       });
     } catch (err) {
       window.__recordEarly('connect-ui:load-snapshot:error', { message: err.message, stack: err.stack });
     }
-  });
-
-  // AppKit ships as a module loaded straight off esm.sh (see the
-  // type="module" script further down) — its own import statements sit
-  // OUTSIDE that module's try/catch (imports execute before any of a
-  // module's own code runs), so a blocked/slow/failed esm.sh fetch means
-  // the module body never executes at all: legacyvault:appkit-error is
-  // dispatched from INSIDE that try/catch, so it never fires either.
-  // Confirmed by reading the actual code, not assumed. Result before this
-  // fix: walletSkeleton — which is HTML `disabled` from the moment it's
-  // rendered — never becomes usable, and nothing ever tells the user
-  // anything is wrong. This is the actual fallback: if neither
-  // legacyvault:appkit-ready nor legacyvault:appkit-error shows up within
-  // APPKIT_TIMEOUT_MS, treat it as failed and make the skeleton itself
-  // the recovery action instead of a permanently dead control.
-  var APPKIT_TIMEOUT_MS = 6000;
-  window.__appKitSettled = false;
-  window.addEventListener('legacyvault:appkit-ready', function () { window.__appKitSettled = true; });
-  window.addEventListener('legacyvault:appkit-error', function () { window.__appKitSettled = true; });
-  setTimeout(function () {
-    if (window.__appKitSettled) return;
-    window.__recordEarly('appkit:timeout', { waitedMs: APPKIT_TIMEOUT_MS });
-    window.dispatchEvent(new Event('legacyvault:appkit-timeout'));
-  }, APPKIT_TIMEOUT_MS);
-
-  // Turns the skeleton from an inert loading placeholder into the actual
-  // recovery action — used by both the timeout above and the (existing,
-  // previously dead-ended) appkit-error handler further down. A reload is
-  // the honest fix here rather than attempting an in-place re-import:
-  // AppKit is genuinely required for anyone without an injected wallet
-  // (no alternative to WalletConnect exists for that case), so "try
-  // again" has to mean actually trying again, not pretending to recover
-  // in place. No-ops entirely when an injected wallet is present —
-  // injectedConnectBtn is already the working, independent path there,
-  // and walletSkeleton stays hidden regardless of what AppKit does.
-  window.__makeWalletSkeletonActionable = function (message) {
-    if (typeof window.ethereum !== 'undefined') return;
-    var skeleton = document.getElementById('walletSkeleton');
-    if (!skeleton) return;
-    skeleton.disabled = false;
-    skeleton.textContent = message;
-    skeleton.setAttribute('aria-hidden', 'false');
-    skeleton.classList.add('is-actionable');
-    skeleton.onclick = function () { location.reload(); };
-  };
-  window.addEventListener('legacyvault:appkit-timeout', function () {
-    window.__makeWalletSkeletonActionable('Reload to connect');
   });
 </script>
 <script>
@@ -992,9 +833,10 @@
 <script src="beneficiary-crypto.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
 <script type="module" id="appKitModuleScript" onerror="window.__recordEarly && window.__recordEarly('appkit-module:load-error', { src: this.src }); window.dispatchEvent(new Event('legacyvault:appkit-error'));">
-  // Wallet connection via Reown AppKit — <appkit-button> in the header IS
-  // the connect/account/disconnect/network-switch UI; there is no custom
-  // picker anymore. Loaded straight off esm.sh (no bundler — the official
+  // Wallet connection via Reown AppKit — its modal (opened programmatically
+  // via appKit.open(), not its own <appkit-button> UI, which stays hidden)
+  // is what the header's single connect button falls back to when there's
+  // no injected wallet. Loaded straight off esm.sh (no bundler — the official
   // examples all assume Vite, which this project doesn't use; esm.sh
   // resolves AppKit's dependency graph the same way a bundler would,
   // confirmed by loading it standalone before wiring it in here).
@@ -1316,72 +1158,18 @@
     if (appKit && !appKit.getIsConnectedState()) clearStaleWalletConnectPairings(state.open ? 'modal-open' : 'modal-close');
   };
 
-  // createAppKit() returning only means our JS call finished — the real
-  // button is <appkit-button> containing <appkit-connect-button>
-  // containing <wui-connect-button>, THREE separate shadow roots deep, and
-  // its label only lands once AppKit's own account/chain state resolves.
-  // Two distinct problems compounded into the three-state flicker a real
-  // phone showed:
-  //  1. `shadowRoot.textContent` does not see past a *nested* custom
-  //     element's own separate shadow root — checking only the outermost
-  //     shadowRoot (as a first attempt at this fix did) always read empty
-  //     and fell through to a dumb timeout, no better than not checking at
-  //     all. Confirmed by walking the actual DOM: the label text is a
-  //     slotted (light-DOM) child of <wui-connect-button>, which *also*
-  //     has its own internal shadow root — so a correct check has to walk
-  //     both a node's shadow root *and* its light-DOM children at every
-  //     level, not just one or the other.
-  //  2. Once that's fixed, the label can still legitimately disappear and
-  //     reappear: wui-connect-button swaps its whole template to a loading
-  //     spinner while AppKit is still resolving whether a session should
-  //     restore, so "has text right now" is not the same as "done
-  //     rendering." Requiring several consecutive identical non-empty
-  //     reads (not just one) is what survives that spinner swap.
-  function getDeepText(node) {
-    let text = '';
-    if (node.shadowRoot) {
-      for (const child of node.shadowRoot.childNodes) {
-        text += child.nodeType === Node.TEXT_NODE ? child.nodeValue : getDeepText(child);
-      }
-    }
-    for (const child of node.childNodes) {
-      text += child.nodeType === Node.TEXT_NODE ? child.nodeValue : getDeepText(child);
-    }
-    return text;
-  }
-  function waitForAppKitButtonContent(callback) {
-    const btn = document.querySelector('appkit-button');
-    const deadline = performance.now() + 5000; // reveal anyway rather than hang forever
-    let stableFrames = 0;
-    let lastText = null;
-    function check() {
-      const text = btn ? getDeepText(btn).trim() : '';
-      stableFrames = (text.length > 0 && text === lastText) ? stableFrames + 1 : 0;
-      lastText = text;
-      if (stableFrames >= 6 || performance.now() > deadline) { callback(); return; }
-      requestAnimationFrame(check);
-    }
-    requestAnimationFrame(check);
-  }
-
   // Registered here, ahead of the module script's dispatch, because
   // classic scripts run before deferred module scripts regardless of
-  // source order.
+  // source order. The header button never waits on either of these —
+  // it's clickable from first paint — so there's no UI state to flip once
+  // AppKit settles; this is purely for the stale-pairing cleanup and the
+  // debug log.
   window.addEventListener('legacyvault:appkit-ready', () => {
     window.__wcLog && window.__wcLog('appkit-ready');
     if (!window.__legacyVaultAppKit.getIsConnectedState()) clearStaleWalletConnectPairings('page-load');
-    waitForAppKitButtonContent(() => {
-      document.getElementById('walletCompact').classList.add('is-ready');
-    });
   });
   window.addEventListener('legacyvault:appkit-error', () => {
     window.__wcLog && window.__wcLog('appkit-error', { message: window.__legacyVaultAppKitError && window.__legacyVaultAppKitError.message });
-    // Used to just change the skeleton's text to "Wallet unavailable" and
-    // stop there — but the skeleton is HTML `disabled` from the moment
-    // it's rendered, so that was a dead end with a slightly more
-    // informative label, not an actual fallback. Same recovery action as
-    // the timeout case now.
-    window.__makeWalletSkeletonActionable('Reload to connect');
   });
 
   // ABI matches the hardened contract (contracts/LegacyVault.sol) — `message`
@@ -1856,7 +1644,7 @@
       const reencrypted = await window.BeneficiaryCrypto.encryptFor(plaintext, ownerReencryptTarget.pubKeyRaw, ownerReencryptTarget.version);
       setBusy($('reencryptBtn'), true, 'Confirm in wallet…');
       note($('ownerMsg'), 'Confirm in your wallet…');
-      const tx = await contract.updateMessage(reencrypted);
+      const tx = await contract.updateMessage(reencrypted, await legacyTxOverrides());
       setBusy($('reencryptBtn'), true, 'Sealing…');
       note($('ownerMsg'), 'Re-sealing…');
       await tx.wait();
@@ -1916,12 +1704,10 @@
   }
 
   // ---------- wallet: bridge AppKit's account state to ethers ----------
-  // <appkit-button> in the header owns the entire connect/disconnect/
-  // account-switch/network-switch UI now. This is the one place that ever
-  // builds or tears down provider/signer/contract — it runs for every kind
-  // of state change (connect, disconnect, switching accounts, switching
-  // chains), so there's no separate disconnect path to fall out of sync
-  // with connect, which is what left disconnect half-wired before.
+  // Fires for every AppKit-side state change (connect, disconnect,
+  // switching accounts, switching chains) — the one place that ever builds
+  // or tears down provider/signer/contract for that path, so there's no
+  // separate disconnect flow to fall out of sync with connect.
 
   // Testnet chain ID 968 collides with an unrelated chain (Datagram) in the
   // public chain registry — see docs/LegacyVault_Mainnet_Plan.md Batch 5
@@ -1999,8 +1785,6 @@
     $('manualNetworkPanel').hidden = true;
   }
   function hideWrongNetworkBanner() { $('wrongNetworkBanner').hidden = true; }
-  function showChainMismatchNote() { $('chainMismatchNote').hidden = false; }
-  function hideChainMismatchNote() { $('chainMismatchNote').hidden = true; }
 
   // Direct, single-purpose retry for the "auto add/switch already failed"
   // case — reached now from mid-transaction (ensureChainForAction, called
@@ -2033,7 +1817,6 @@
       applyResolvedNetwork(resolved.netKey, resolved.netEntry);
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
       hideWrongNetworkBanner();
-      hideChainMismatchNote();
       await refreshOwnerVault();
       note($('createMsg'), 'Connected to the right network — go ahead and try that again.', 'ok');
     } catch (err) {
@@ -2065,35 +1848,25 @@
     $('createBtn').disabled = true;
     $('findBtn').disabled = true;
     $('lookupBtn').disabled = true;
-    hideChainMismatchNote();
     renderDirectConnectPill();
     refreshOwnerVault(); // myAddress is now undefined too; falls back to the empty "create" view
   }
 
-  // Shows/hides the header's connected-state pill for the direct-connect
-  // path. <appkit-button>'s own connected UI is untouched either way — it
-  // only reflects AppKit's session, which connectDirect() never creates —
-  // so this hides it (and the skeleton) whenever the pill is showing, so
-  // the header never shows two conflicting connect states at once.
+  // Shows/hides the header's connected-state pill — the one connected-state
+  // UI for both connect paths (connectDirect() or an AppKit/WalletConnect
+  // session), keyed off myAddress rather than usingDirectConnect, so it
+  // reflects either equally and the header never shows two conflicting
+  // connect states at once.
   function renderDirectConnectPill() {
     const pill = $('directConnectPill');
-    const appKitBtn = document.querySelector('appkit-button');
-    const hasInjected = typeof window.ethereum !== 'undefined';
-    if (usingDirectConnect && myAddress) {
+    if (myAddress) {
       pill.hidden = false;
       $('directConnectAddr').textContent = short(myAddress);
-      $('walletSkeleton').style.display = 'none';
-      $('injectedConnectBtn').style.display = 'none';
-      if (appKitBtn) appKitBtn.style.display = 'none';
+      $('connectBtn').style.display = 'none';
       refreshDirectConnectBalance(); // fire-and-forget; own errors are caught internally
     } else {
       pill.hidden = true;
-      // Restore whichever button is the actual primary path for this
-      // wallet — injectedConnectBtn if window.ethereum exists (the normal
-      // case now), walletSkeleton/appkit-button only when it doesn't.
-      $('walletSkeleton').style.display = hasInjected ? 'none' : '';
-      $('injectedConnectBtn').style.display = hasInjected ? '' : 'none';
-      if (appKitBtn) appKitBtn.style.display = hasInjected ? 'none' : '';
+      $('connectBtn').style.display = '';
     }
   }
 
@@ -2107,7 +1880,7 @@
   // balance: seal, deposit, withdraw, close, claim (each pays gas; claim
   // also receives funds).
   async function refreshDirectConnectBalance() {
-    if (!usingDirectConnect || !myAddress || !provider) return;
+    if (!myAddress || !provider) return;
     try {
       const balance = await provider.getBalance(myAddress);
       $('directConnectBalance').textContent = `${Number(ethers.formatEther(balance)).toFixed(4)} BOT`;
@@ -2229,14 +2002,11 @@
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
       console.log('[LegacyVault] applied network:', resolved.netKey, '— CONTRACT_ADDRESS is now', CONTRACT_ADDRESS);
       window.__wcLog && window.__wcLog('connectWithEth:applied-network', { netKey: resolved.netKey, contractAddress: CONTRACT_ADDRESS });
-      hideChainMismatchNote();
-    } else {
-      // Not blocking, not even an error — just means action buttons will
-      // prompt for the network when pressed instead of being ready to go
-      // immediately. refreshOwnerVault() below still shows real vault
-      // data via the read-only fallback, regardless.
-      showChainMismatchNote();
     }
+    // Not resolved isn't blocking, not even an error — just means action
+    // buttons will prompt for the network when pressed (ensureChainForAction)
+    // instead of being ready to go immediately. refreshOwnerVault() below
+    // still shows real vault data via the read-only fallback, regardless.
 
     $('createBtn').disabled = false;
     $('findBtn').disabled = false;
@@ -2274,8 +2044,25 @@
     hideWrongNetworkBanner(); // clears the registry-collision notice shown mid-attempt
     applyResolvedNetwork(resolved.netKey, resolved.netEntry);
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-    hideChainMismatchNote();
     await refreshOwnerVault();
+  }
+
+  // The chain reports baseFeePerGas:0x0 in every block header (present, not
+  // absent), but every transaction actually mined on it is type-0 (legacy).
+  // Some wallet SDKs read that present-but-zero field as an EIP-1559 signal
+  // and construct a type-2 transaction anyway, which this chain doesn't
+  // handle the same way. Passing an explicit gasPrice forces ethers/the
+  // wallet to build a legacy transaction instead of guessing.
+  async function legacyTxOverrides() {
+    try {
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? ethers.parseUnits('20', 'gwei');
+      window.__wcLog && window.__wcLog('legacyTxOverrides', { gasPrice: gasPrice.toString() });
+      return { gasPrice };
+    } catch (err) {
+      window.__wcLog && window.__wcLog('legacyTxOverrides:error', plainifyError(err));
+      return {};
+    }
   }
 
   // Shared display logic for the four chain-related error shapes
@@ -2382,6 +2169,7 @@
       if (!eth) throw new Error('Wallet provider not ready yet.');
 
       const netKey = await connectWithEth(eth);
+      renderDirectConnectPill();
       window.__wcLog && window.__wcLog('account:ready', { address: myAddress, network: netKey });
     } catch (err) {
       handleConnectError(err);
@@ -2423,66 +2211,53 @@
   }
   $('directConnectBtn').addEventListener('click', connectDirect);
   // There's no universal EIP-1193 "revoke" call an injected provider is
-  // guaranteed to support — this clears the app's own connection state
-  // only (same as any other disconnect path here); the extension itself
-  // stays connected until the user disconnects it there too.
-  $('directDisconnectBtn').addEventListener('click', () => {
+  // guaranteed to support — for a direct-connect session this clears the
+  // app's own state only; the extension itself stays connected until the
+  // user disconnects it there too. An AppKit/WalletConnect session DOES
+  // have a real disconnect call, and skipping it would leave AppKit's
+  // persisted session to silently reconnect on the next page load.
+  $('directDisconnectBtn').addEventListener('click', async () => {
+    if (!usingDirectConnect && window.__legacyVaultAppKit && window.__legacyVaultAppKit.getIsConnectedState()) {
+      try { await window.__legacyVaultAppKit.disconnect(); } catch (err) { window.__wcLog && window.__wcLog('appkit:disconnect:error', plainifyError(err)); }
+    }
     clearConnectionState();
     hideWrongNetworkBanner();
   });
 
-  // Primary connect path for any injected wallet — see the comment on
-  // #injectedConnectBtn in the header markup for why this exists at all
-  // (AppKit's connect() aborting the whole connection on its own internal
-  // switch failure). Runs synchronously at load, no AppKit readiness wait
-  // needed: window.ethereum is either there or it isn't from the moment
-  // the page parses.
-  window.__recordEarly('connect-ui:before-injected-setup', { hasInjectedWallet: typeof window.ethereum !== 'undefined' });
-  if (typeof window.ethereum !== 'undefined') {
-    try {
-      const appKitBtn = document.querySelector('appkit-button');
-      if (appKitBtn) appKitBtn.style.display = 'none';
-      $('walletSkeleton').style.display = 'none';
-      $('injectedConnectBtn').hidden = false;
-      $('injectedConnectBtn').addEventListener('click', connectDirect);
-      window.__recordEarly('connect-ui:injected-setup-complete', {
-        walletSkeletonDisplay: getComputedStyle($('walletSkeleton')).display,
-        injectedConnectBtnHidden: $('injectedConnectBtn').hidden,
-        appkitButtonDisplay: appKitBtn ? getComputedStyle(appKitBtn).display : 'not found',
-      });
-    } catch (err) {
-      // Never silently swallow this — if setup for the primary connect
-      // path itself throws, that IS the dead-button bug, and needs to be
-      // both logged AND re-thrown so it isn't hidden from the console too.
-      window.__recordEarly('connect-ui:injected-setup-error', { message: err.message, stack: err.stack });
-      throw err;
-    }
-  } else {
-    window.__recordEarly('connect-ui:no-injected-wallet', {});
-    // No window.ethereum at all — injectedConnectBtn has nothing to talk
-    // to. Primary path here is a deep link into a wallet app's own
-    // in-app browser; <appkit-button> (still in the header, untouched)
-    // stays available as the secondary option, mentioned in this panel's
-    // own text rather than hidden or disabled.
-    try {
-      const pageUrl = window.location.href;
-      const urlNoScheme = pageUrl.replace(/^https?:\/\//, '');
-      $('deepLinkMetaMask').href = `https://metamask.app.link/dapp/${urlNoScheme}`;
-      $('deepLinkTrust').href = `https://link.trustwallet.com/open_url?url=${encodeURIComponent(pageUrl)}`;
-      // Rainbow and Zerion: no deep-link scheme here I could verify opens
-      // an arbitrary URL directly in their in-app browser (unlike
-      // MetaMask's and Trust Wallet's, which are long-standing, widely
-      // documented patterns) — rather than guess and risk a dead link,
-      // these go to the wallet's own site, and the field-hint below
-      // covers actually getting here via copy/paste instead.
-      $('deepLinkRainbow').href = 'https://rainbow.me';
-      $('deepLinkZerion').href = 'https://zerion.io';
-      $('noWalletUrl').textContent = pageUrl;
-      $('noWalletPanel').hidden = false;
-      window.__recordEarly('connect-ui:no-wallet-panel-shown', { pageUrl });
-    } catch (err) {
-      window.__recordEarly('connect-ui:no-wallet-panel-error', { message: err.message, stack: err.stack });
-    }
+  // The one connect button, wired once, unconditionally — no AppKit
+  // readiness wait, no separate no-wallet branch in the markup. It
+  // branches internally, at the moment of the click rather than at page
+  // load, since that's the only point window.ethereum's presence actually
+  // needs to be checked: an injected wallet (extension, or a wallet app's
+  // own in-app browser) connects directly, bypassing AppKit's connect()
+  // entirely (that path was found to abort the whole connection on its
+  // own internal network-reconciliation switch failure — see
+  // connectDirect's comment). With no injected wallet, this opens AppKit's
+  // own modal (WalletConnect session + wallet list) instead — the "small
+  // modal with wallet options" a user with nothing installed needs, shown
+  // only once they've actually tapped, not before.
+  window.__recordEarly('connect-ui:before-setup', { hasInjectedWallet: typeof window.ethereum !== 'undefined' });
+  try {
+    $('connectBtn').addEventListener('click', () => {
+      window.__wcLog && window.__wcLog('connectBtn:click', { hasInjectedWallet: typeof window.ethereum !== 'undefined', appKitReady: !!window.__legacyVaultAppKit });
+      if (typeof window.ethereum !== 'undefined') {
+        connectDirect();
+      } else if (window.__legacyVaultAppKit) {
+        window.__legacyVaultAppKit.open();
+      } else {
+        // AppKit's module (esm.sh) hasn't finished loading yet — rare, and
+        // only reachable with no injected wallet at all. Transient, tied
+        // to this one click, not a standing banner.
+        note($('createMsg'), 'Still loading wallet options — try again in a moment.', 'err');
+      }
+    });
+    window.__recordEarly('connect-ui:setup-complete', { connectBtnPresent: !!document.getElementById('connectBtn') });
+  } catch (err) {
+    // Never silently swallow this — if wiring the one connect button
+    // itself throws, that IS the dead-button bug, and needs to be both
+    // logged AND re-thrown so it isn't hidden from the console too.
+    window.__recordEarly('connect-ui:setup-error', { message: err.message, stack: err.stack });
+    throw err;
   }
 
   // AppKit's subscribeCaipNetworkChange only fires for switches AppKit
@@ -2648,7 +2423,7 @@
         : await encryptMessage(msg, pass);
       setBusy($('createBtn'), true, 'Confirm in wallet…');
       note($('createMsg'), 'Confirm in your wallet…');
-      const tx = await contract.createVault(ben, interval, encrypted, { value: ethers.parseEther(amt) });
+      const tx = await contract.createVault(ben, interval, encrypted, { value: ethers.parseEther(amt), ...(await legacyTxOverrides()) });
       setBusy($('createBtn'), true, 'Sealing on-chain…');
       note($('createMsg'), 'Sealing on-chain…');
       await tx.wait();
@@ -2668,7 +2443,7 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.checkIn();
+      const tx = await contract.checkIn(await legacyTxOverrides());
       setBusy($('checkInBtn'), true, 'Recording…');
       await tx.wait();
       noteTxSuccess($('ownerMsg'), 'Proof of life recorded.');
@@ -2698,7 +2473,7 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.deposit({ value: ethers.parseEther(amt) });
+      const tx = await contract.deposit({ value: ethers.parseEther(amt), ...(await legacyTxOverrides()) });
       setBusy($('depositConfirm'), true, 'Adding…');
       await tx.wait();
       noteTxSuccess($('ownerMsg'), 'Funds added. Timer reset.');
@@ -2721,7 +2496,7 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.withdraw(ethers.parseEther(amt));
+      const tx = await contract.withdraw(ethers.parseEther(amt), await legacyTxOverrides());
       setBusy($('withdrawConfirm'), true, 'Withdrawing…');
       await tx.wait();
       noteTxSuccess($('ownerMsg'), 'Withdrawn. Timer reset.');
@@ -2744,7 +2519,7 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.updateBeneficiary(addr);
+      const tx = await contract.updateBeneficiary(addr, await legacyTxOverrides());
       setBusy($('changeBenConfirm'), true, 'Changing…');
       await tx.wait();
       showTxLink($('ownerTxLink'), tx.hash);
@@ -2776,7 +2551,7 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.closeVault();
+      const tx = await contract.closeVault(await legacyTxOverrides());
       setBusy($('closeConfirm'), true, 'Closing…');
       await tx.wait();
       noteTxSuccess($('ownerMsg'), 'Vault closed. Full balance returned.');
@@ -3001,7 +2776,7 @@
     note($('claimMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.claim(claimTargetOwner);
+      const tx = await contract.claim(claimTargetOwner, await legacyTxOverrides());
       setBusy($('claimBtn'), true, 'Breaking the seal…');
       note($('claimMsg'), 'Breaking the seal…');
       await tx.wait();
