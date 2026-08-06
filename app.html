@@ -292,6 +292,28 @@
     margin: 0 0 var(--space-6);
   }
 
+  /* ---------- no-injected-wallet deep-link panel ---------- */
+  .no-wallet-panel[hidden] { display: none; }
+  .no-wallet-panel {
+    background: var(--parchment-3);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: var(--space-4) var(--space-5);
+    margin: 0 0 var(--space-6);
+    font-family: var(--font-data); font-size: var(--text-xs); line-height: 1.6;
+  }
+  .no-wallet-panel > p:first-child { margin: 0 0 var(--space-3); color: var(--text); }
+  .wallet-deep-links { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-3); }
+  .wallet-deep-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: var(--space-2) var(--space-4);
+    background: var(--wax); color: var(--parchment-2);
+    border-radius: 2px; text-decoration: none;
+    font-family: var(--font-data); font-size: var(--text-xs); letter-spacing: 0.02em;
+  }
+  .wallet-deep-link:hover { background: var(--wax-deep); }
+  #noWalletUrl { word-break: break-all; margin-right: var(--space-2); color: var(--text); }
+
   /* ---------- claim-side gas warning ---------- */
   .gas-warning[hidden] { display: none; }
   .gas-warning {
@@ -512,6 +534,30 @@
       </div>
     </div>
   </header>
+
+  <!-- Shown only when there's no injected wallet at all (no window.ethereum
+       — a plain mobile browser, or desktop with no extension) — the case
+       injectedConnectBtn can't cover, since there's nothing for it to talk
+       to. Primary path here is a deep link into a wallet app's own
+       in-app browser (which injects window.ethereum once you're actually
+       inside it, so the rest of this page's normal flow just works from
+       there). <appkit-button> in the header keeps working as-is — this
+       doesn't hide or disable it, it just stops being the first, biggest
+       thing offered. -->
+  <div id="noWalletPanel" class="no-wallet-panel" hidden>
+    <p>No wallet found in this browser. If you're on your phone, open this page inside your wallet app's own browser instead:</p>
+    <div class="wallet-deep-links">
+      <a id="deepLinkMetaMask" class="wallet-deep-link" target="_blank" rel="noopener">MetaMask</a>
+      <a id="deepLinkTrust" class="wallet-deep-link" target="_blank" rel="noopener">Trust Wallet</a>
+      <a id="deepLinkRainbow" class="wallet-deep-link" target="_blank" rel="noopener">Rainbow</a>
+      <a id="deepLinkZerion" class="wallet-deep-link" target="_blank" rel="noopener">Zerion</a>
+    </div>
+    <p class="field-hint">
+      Rainbow and Zerion don't support opening this exact page directly — open the app, find its built-in browser, and paste this address:
+      <span id="noWalletUrl"></span><button type="button" class="copy-btn" data-copy-target="noWalletUrl">Copy</button>
+    </p>
+    <p class="field-hint">Or connect from here via WalletConnect using the button in the top right — a secondary option, since it depends on the wallet app supporting it.</p>
+  </div>
 
   <div id="localDevBanner" class="local-dev-banner" hidden>
     LOCAL DEV — Hardhat node, chain 31337. Not real funds, not the deployed testnet/mainnet contract.
@@ -2413,6 +2459,30 @@
     }
   } else {
     window.__recordEarly('connect-ui:no-injected-wallet', {});
+    // No window.ethereum at all — injectedConnectBtn has nothing to talk
+    // to. Primary path here is a deep link into a wallet app's own
+    // in-app browser; <appkit-button> (still in the header, untouched)
+    // stays available as the secondary option, mentioned in this panel's
+    // own text rather than hidden or disabled.
+    try {
+      const pageUrl = window.location.href;
+      const urlNoScheme = pageUrl.replace(/^https?:\/\//, '');
+      $('deepLinkMetaMask').href = `https://metamask.app.link/dapp/${urlNoScheme}`;
+      $('deepLinkTrust').href = `https://link.trustwallet.com/open_url?url=${encodeURIComponent(pageUrl)}`;
+      // Rainbow and Zerion: no deep-link scheme here I could verify opens
+      // an arbitrary URL directly in their in-app browser (unlike
+      // MetaMask's and Trust Wallet's, which are long-standing, widely
+      // documented patterns) — rather than guess and risk a dead link,
+      // these go to the wallet's own site, and the field-hint below
+      // covers actually getting here via copy/paste instead.
+      $('deepLinkRainbow').href = 'https://rainbow.me';
+      $('deepLinkZerion').href = 'https://zerion.io';
+      $('noWalletUrl').textContent = pageUrl;
+      $('noWalletPanel').hidden = false;
+      window.__recordEarly('connect-ui:no-wallet-panel-shown', { pageUrl });
+    } catch (err) {
+      window.__recordEarly('connect-ui:no-wallet-panel-error', { message: err.message, stack: err.stack });
+    }
   }
 
   // AppKit's subscribeCaipNetworkChange only fires for switches AppKit
