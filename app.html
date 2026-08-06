@@ -282,6 +282,16 @@
   #manualNetCollisionWarning[hidden] { display: none; }
   #manualNetCollisionWarning { margin-top: var(--space-3); }
 
+  /* Deliberately quiet — muted text, no border, no background — the
+     opposite treatment of .wrong-network-banner. This is "here's a fact,
+     carry on," not "something is wrong, fix it." */
+  .chain-mismatch-note[hidden] { display: none; }
+  .chain-mismatch-note {
+    text-align: center; color: var(--muted);
+    font-family: var(--font-data); font-size: var(--text-xs); line-height: 1.6;
+    margin: 0 0 var(--space-6);
+  }
+
   /* ---------- claim-side gas warning ---------- */
   .gas-warning[hidden] { display: none; }
   .gas-warning {
@@ -562,6 +572,16 @@
     </dl>
     <p class="field-hint" id="manualNetCollisionWarning" hidden></p>
   </div>
+
+  <!-- Shown whenever the wallet is connected but on a different network —
+       deliberately quiet (not the wax-red wrongNetworkBanner above, which
+       is now reserved for an actual failed switch/add attempt mid-action).
+       Connecting never blocks on chain anymore; this just says so, and
+       every action button below still works — pressing one is what
+       prompts the switch, at the moment it actually matters. -->
+  <p id="chainMismatchNote" class="chain-mismatch-note" hidden>
+    Connected, but your wallet is on a different network right now. You can look around freely — we'll prompt you to switch when you take an action that needs it (seal, check in, deposit, withdraw, change beneficiary, close, or claim).
+  </p>
 
   <div class="tabs">
     <button class="tab active" id="tabLeave">Leave a legacy</button>
@@ -1348,6 +1368,11 @@
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
   let usingDirectConnect = false; // true when connected via connectDirect() rather than AppKit
+  // The raw EIP-1193 provider backing the current session (window.ethereum
+  // or AppKit's) — stored so ensureChainForAction() and the addChainBtn
+  // handler can reach it later, at the moment a transaction is attempted,
+  // without re-deriving which-provider-are-we-using logic a second time.
+  let currentEth;
   // Offset (seconds) between the connected chain's clock and this browser's
   // clock — chainNowSeconds() below is what every countdown/deadline
   // calculation should use instead of Date.now() directly. On a real chain
@@ -1780,6 +1805,7 @@
     }
 
     try {
+      await ensureChainForAction();
       setBusy($('reencryptBtn'), true, 'Encrypting…');
       const reencrypted = await window.BeneficiaryCrypto.encryptFor(plaintext, ownerReencryptTarget.pubKeyRaw, ownerReencryptTarget.version);
       setBusy($('reencryptBtn'), true, 'Confirm in wallet…');
@@ -1795,7 +1821,7 @@
       await refreshOwnerVault();
     } catch (err) {
       console.error(err);
-      note($('ownerMsg'), friendlyError(err), 'err');
+      if (!handleChainOnboardingError(err)) note($('ownerMsg'), friendlyError(err), 'err');
     } finally { setBusy($('reencryptBtn'), false); }
   }
 
@@ -1927,32 +1953,46 @@
     $('manualNetworkPanel').hidden = true;
   }
   function hideWrongNetworkBanner() { $('wrongNetworkBanner').hidden = true; }
+  function showChainMismatchNote() { $('chainMismatchNote').hidden = false; }
+  function hideChainMismatchNote() { $('chainMismatchNote').hidden = true; }
 
   // Direct, single-purpose retry for the "auto add/switch already failed"
-  // case — no jargon, one obvious button, calls wallet_addEthereumChain
-  // straight away (switching first is pointless here: the automatic
-  // attempt already tried that and got code 4902, i.e. proved the wallet
-  // doesn't know the chain at all). On success, re-runs whichever connect
-  // path was active so the rest of the flow (signer, contract) completes.
+  // case — reached now from mid-transaction (ensureChainForAction, called
+  // from every seal/check-in/deposit/withdraw/change-beneficiary/close/
+  // claim/re-encrypt handler), not from connect time. No jargon, one
+  // obvious button, calls wallet_addEthereumChain straight away
+  // (switching first is pointless here: the automatic attempt already
+  // tried that and got code 4902, i.e. proved the wallet doesn't know the
+  // chain at all). Uses currentEth — the provider behind whichever
+  // session is actually active — rather than re-deriving it. On success,
+  // resolves and applies the network directly and tells the user to
+  // retry their action; does NOT re-run the whole connect flow (the
+  // wallet was already connected — this only needed to fix the chain)
+  // and does NOT clear connection state on failure, since the wallet is
+  // still genuinely connected either way.
   $('addChainBtn').addEventListener('click', async () => {
     setBusy($('addChainBtn'), true, 'Confirm in wallet…');
     try {
-      const eth = (typeof window.ethereum !== 'undefined')
-        ? window.ethereum
-        : window.__legacyVaultAppKit && window.__legacyVaultAppKit.getWalletProvider();
-      if (!eth) throw new Error('Wallet provider not ready yet.');
+      if (!currentEth) throw new Error('Connect your wallet first.');
       window.__wcLog && window.__wcLog('addChainBtn:wallet_addEthereumChain:call', NETWORK_PARAMS);
-      await eth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
+      await currentEth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
       window.__wcLog && window.__wcLog('addChainBtn:wallet_addEthereumChain:ok');
-      hideWrongNetworkBanner();
-      if (usingDirectConnect) {
-        await connectDirect();
-      } else if (window.__legacyVaultAppKit) {
-        await window.__onAppKitAccount(window.__legacyVaultAppKit.getAccount());
+      const resolved = await tryResolveChain(currentEth);
+      if (!resolved) {
+        const err = new Error('Still not on the expected network.');
+        err.chainOnboardingFailed = true;
+        err.chainOnboardingReason = 'still on a different network after adding';
+        throw err;
       }
+      applyResolvedNetwork(resolved.netKey, resolved.netEntry);
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      hideWrongNetworkBanner();
+      hideChainMismatchNote();
+      await refreshOwnerVault();
+      note($('createMsg'), 'Connected to the right network — go ahead and try that again.', 'ok');
     } catch (err) {
       window.__wcLog && window.__wcLog('addChainBtn:wallet_addEthereumChain:error', plainifyError(err));
-      handleConnectError(classifyChainOnboardingError(err));
+      handleChainOnboardingError(classifyChainOnboardingError(err));
     } finally { setBusy($('addChainBtn'), false); }
   });
 
@@ -1974,13 +2014,14 @@
   // network connect, and as the baseline before every reconnect attempt so
   // stale state never lingers across an account or network switch.
   function clearConnectionState() {
-    provider = signer = contract = myAddress = undefined;
+    provider = signer = contract = myAddress = currentEth = undefined;
     usingDirectConnect = false;
     $('createBtn').disabled = true;
     $('findBtn').disabled = true;
     $('lookupBtn').disabled = true;
+    hideChainMismatchNote();
     renderDirectConnectPill();
-    refreshOwnerVault(); // contract is now undefined; falls back to the empty "create" view
+    refreshOwnerVault(); // myAddress is now undefined too; falls back to the empty "create" view
   }
 
   // Shows/hides the header's connected-state pill for the direct-connect
@@ -2094,82 +2135,127 @@
   // it's actually on, and wires up provider/signer/contract. Throws on
   // any failure; callers are responsible for the try/catch and UI
   // response (handleConnectError below covers both the same way).
+  // Pure read: reports whether eth is currently on a network we recognize
+  // AND trust (genesis-verified) AND have a contract deployed on. Never
+  // prompts, never switches, never throws for a mismatch — just answers
+  // the question. Returns { netKey, netEntry } or null.
+  async function tryResolveChain(eth) {
+    const chainIdHex = await eth.request({ method: 'eth_chainId' });
+    const match = findNetworkForChainId(chainIdHex);
+    const knownChains = Object.fromEntries(Object.entries(window.LEGACY_VAULT_CONFIG.NETWORKS).map(([k, n]) => [k, n.chainIdHex]));
+    window.__wcLog && window.__wcLog('tryResolveChain', { chainIdHex, matched: match ? match[0] : null, knownChains });
+    if (!match || !match[1].contractAddress) return null;
+    try {
+      await verifyGenuineBotChain(eth, match[1]);
+    } catch (err) {
+      window.__wcLog && window.__wcLog('tryResolveChain:genesis-mismatch', plainifyError(err));
+      return null;
+    }
+    return { netKey: match[0], netEntry: match[1] };
+  }
+
+  // Connecting NEVER blocks on which chain the wallet is on — this used to
+  // try to add/switch the chain right here, and throw if that failed,
+  // which is exactly what broke: AppKit itself does the same thing
+  // internally (aborts the whole connection on its own switch failure —
+  // see the injected-wallet bypass elsewhere in this file), and our own
+  // version of that same idea just moved the wall from AppKit's code to
+  // ours. The fix is architectural, not another special case: get the
+  // address, always; resolve whether the chain also happens to be right,
+  // for display only; leave the actual switch/add prompt for the moment a
+  // transaction is attempted (ensureChainForAction, called from every
+  // seal/check-in/deposit/withdraw/change-beneficiary/close/claim/
+  // re-encrypt handler) — wallets are far more willing to add a network
+  // when a real transaction needs it, and someone just looking around
+  // never has to see any of this at all.
   async function connectWithEth(eth) {
     window.__wcLog && window.__wcLog('connectWithEth:start');
-    let chainIdHex = await eth.request({ method: 'eth_chainId' });
-    let match = findNetworkForChainId(chainIdHex);
-    const knownChains = Object.fromEntries(Object.entries(window.LEGACY_VAULT_CONFIG.NETWORKS).map(([k, n]) => [k, n.chainIdHex]));
-    console.log('[LegacyVault] wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(none — unrecognized chain)', 'known chains:', knownChains);
-    window.__wcLog && window.__wcLog('connectWithEth:chain-check', { chainIdHex, matched: match ? match[0] : null, knownChains });
-    if (!match) {
-      // First-time wallet, or one on some other chain entirely — try to
-      // bring it onto this build's network before giving up. A user who's
-      // never added BOT Chain should get one prompt, not a dead end.
-      await ensureWalletHasChain(eth);
-      chainIdHex = await eth.request({ method: 'eth_chainId' });
-      match = findNetworkForChainId(chainIdHex);
-      console.log('[LegacyVault] after add/switch attempt, wallet reports chain', chainIdHex, '— matched network:', match ? match[0] : '(still none)');
-      window.__wcLog && window.__wcLog('connectWithEth:post-onboarding-chain-check', { chainIdHex, matched: match ? match[0] : null });
-      if (!match) {
-        // The wallet reported success but is still elsewhere — some
-        // wallets silently no-op wallet_addEthereumChain instead of
-        // erroring. Point at the manual panel rather than loop forever.
-        const err = new Error('Wallet did not switch to the expected network.');
-        err.chainOnboardingFailed = true;
-        err.chainOnboardingReason = 'the wallet reported success but is still on a different network';
-        throw err;
-      }
-      hideWrongNetworkBanner(); // clears the registry-collision notice shown mid-attempt
-    }
-    const [netKey, netEntry] = match;
-    if (!netEntry.contractAddress) {
-      console.log('[LegacyVault] matched', netKey, 'but it has no contractAddress configured');
-      window.__wcLog && window.__wcLog('connectWithEth:no-contract-on-network', { netKey });
-      const err = new Error(`No LegacyVault contract deployed on ${netEntry.name} yet.`);
-      err.noContractOnNetwork = true;
-      err.networkName = netEntry.name;
-      throw err;
-    }
-
-    await verifyGenuineBotChain(eth, netEntry);
-    applyResolvedNetwork(netKey, netEntry);
-    console.log('[LegacyVault] applied network:', netKey, '— CONTRACT_ADDRESS is now', CONTRACT_ADDRESS, '— NETWORK_NAME is now', window.LEGACY_VAULT_CONFIG.NETWORK_NAME);
-    window.__wcLog && window.__wcLog('connectWithEth:applied-network', { netKey, contractAddress: CONTRACT_ADDRESS });
-
+    currentEth = eth;
     provider = new ethers.BrowserProvider(eth);
     signer = await provider.getSigner();
     myAddress = await signer.getAddress();
-    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    contract = undefined; // rebuilt below only if the wallet is already on the right chain
+    readContract = undefined; // stale from any previous session/network
+
+    const resolved = await tryResolveChain(eth);
+    if (resolved) {
+      applyResolvedNetwork(resolved.netKey, resolved.netEntry);
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      console.log('[LegacyVault] applied network:', resolved.netKey, '— CONTRACT_ADDRESS is now', CONTRACT_ADDRESS);
+      window.__wcLog && window.__wcLog('connectWithEth:applied-network', { netKey: resolved.netKey, contractAddress: CONTRACT_ADDRESS });
+      hideChainMismatchNote();
+    } else {
+      // Not blocking, not even an error — just means action buttons will
+      // prompt for the network when pressed instead of being ready to go
+      // immediately. refreshOwnerVault() below still shows real vault
+      // data via the read-only fallback, regardless.
+      showChainMismatchNote();
+    }
 
     $('createBtn').disabled = false;
     $('findBtn').disabled = false;
     $('lookupBtn').disabled = false;
 
     await refreshOwnerVault();
-    return netKey;
+    return resolved ? resolved.netKey : null;
   }
 
-  function handleConnectError(err) {
-    console.error(err);
-    window.__wcLog && window.__wcLog('account:error', {
-      message: err && err.message, wrongChainRpc: !!(err && err.wrongChainRpc),
-      chainOnboardingDeclined: !!(err && err.chainOnboardingDeclined),
-      chainOnboardingFailed: !!(err && err.chainOnboardingFailed),
-      chainOnboardingReason: err && err.chainOnboardingReason,
-    });
-    clearConnectionState();
+  // Shared by every tx-firing action (seal/check-in/deposit/withdraw/
+  // change-beneficiary/close/claim/re-encrypt) — called as the first thing
+  // each one does. If the wallet's already on the right chain (the common
+  // case once connected there), this is a single cheap check and returns
+  // immediately with no prompt at all. Otherwise this is where the
+  // add/switch prompt actually happens — at the moment a transaction
+  // needs it, not at connect time — reusing the exact same
+  // switch-then-add sequence (ensureWalletHasChain) that used to run
+  // during connect. Throws the same chainOnboardingDeclined/
+  // chainOnboardingFailed/wrongChainRpc-shaped errors as before; callers
+  // should route those through handleChainOnboardingError.
+  async function ensureChainForAction() {
+    if (contract) return; // already resolved to the right chain
+    if (!currentEth || !signer) {
+      const err = new Error('Connect your wallet first.');
+      throw err;
+    }
+    await ensureWalletHasChain(currentEth);
+    const resolved = await tryResolveChain(currentEth);
+    if (!resolved) {
+      const err = new Error('Wallet did not switch to the expected network.');
+      err.chainOnboardingFailed = true;
+      err.chainOnboardingReason = 'the wallet reported success but is still on a different network';
+      throw err;
+    }
+    hideWrongNetworkBanner(); // clears the registry-collision notice shown mid-attempt
+    applyResolvedNetwork(resolved.netKey, resolved.netEntry);
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    hideChainMismatchNote();
+    await refreshOwnerVault();
+  }
+
+  // Shared display logic for the four chain-related error shapes
+  // (wrongChainRpc / chainOnboardingDeclined / chainOnboardingFailed /
+  // noContractOnNetwork) — used by both a genuine connect failure and, now,
+  // by every tx-firing action's catch block when ensureChainForAction()
+  // fails partway through. Returns true if it handled the error (caller
+  // should stop there); false if the caller should fall through to its
+  // own normal friendlyError display instead.
+  function handleChainOnboardingError(err) {
+    if (!err) return false;
     if (err.wrongChainRpc) {
       showWrongNetworkBanner();
       $('switchNetworkBtn').hidden = false;
-    } else if (err.chainOnboardingDeclined) {
+      return true;
+    }
+    if (err.chainOnboardingDeclined) {
       // 4001 on wallet_switchEthereumChain/wallet_addEthereumChain — the
-      // user said no to adding the network, not a real failure. Distinct
-      // from the generic error path so this never reads as something
-      // broken; retrying just means tapping Connect again. No action
-      // button here — Connect Wallet itself is the retry.
+      // user said no, not a real failure. Distinct from the generic error
+      // path so this never reads as something broken; retrying just means
+      // pressing the same action again.
       const targetName = (getBuildTargetNetwork() || {}).name || window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
-      showWrongNetworkBanner(`You declined adding ${targetName}. Tap Connect to try again.`);
-    } else if (err.chainOnboardingFailed) {
+      showWrongNetworkBanner(`You declined adding ${targetName}. Try that again when you're ready.`);
+      return true;
+    }
+    if (err.chainOnboardingFailed) {
       // Anything else — the wallet doesn't support wallet_addEthereumChain
       // at all, rejected the params, or silently no-op'd. One obvious
       // retry button first; the raw RPC/chain-ID values stay behind the
@@ -2184,9 +2270,35 @@
       $('addChainBtn').hidden = false;
       $('manualNetworkToggleRow').hidden = false;
       if (DEBUG_MODE) { document.getElementById('debugLogPanel').hidden = false; renderWalletDebugLog(); }
-    } else if (err.noContractOnNetwork) {
+      return true;
+    }
+    if (err.noContractOnNetwork) {
       showWrongNetworkBanner(`No LegacyVault contract is deployed on <strong>${err.networkName}</strong> yet.`);
-    } else {
+      return true;
+    }
+    return false;
+  }
+
+  // Genuine connect-attempt failures only now — e.g. the user rejected the
+  // eth_requestAccounts prompt itself, or the wallet provider wasn't ready.
+  // connectWithEth() no longer throws for chain reasons at all (see its own
+  // comment), so the chain-related branches here are reached only in the
+  // unlikely case something upstream still produces one of those shapes;
+  // handleChainOnboardingError covers them the same way it does for a
+  // failed action mid-transaction. This is the one place that still calls
+  // clearConnectionState() — an action-time chain failure (the far more
+  // common path now) deliberately does not, since the wallet is still
+  // genuinely connected, just not yet on the right chain.
+  function handleConnectError(err) {
+    console.error(err);
+    window.__wcLog && window.__wcLog('account:error', {
+      message: err && err.message, wrongChainRpc: !!(err && err.wrongChainRpc),
+      chainOnboardingDeclined: !!(err && err.chainOnboardingDeclined),
+      chainOnboardingFailed: !!(err && err.chainOnboardingFailed),
+      chainOnboardingReason: err && err.chainOnboardingReason,
+    });
+    clearConnectionState();
+    if (!handleChainOnboardingError(err)) {
       note($('createMsg'), friendlyError(err), 'err');
     }
   }
@@ -2338,18 +2450,43 @@
     });
   }
 
+  // Falls back to a plain read-only provider against this build's actual
+  // target contract when there's no signer-bound contract yet (wallet
+  // connected but on a different chain — see connectWithEth) — reads
+  // vault data from BOT Chain regardless of which chain the wallet
+  // happens to be sitting on right now, since a read is just a JSON-RPC
+  // call, not something that needs the wallet's cooperation at all.
+  // Deliberately keyed off getBuildTargetNetwork() (stable), not the
+  // live/mutable CONTRACT_ADDRESS, which a *previous* connection to a
+  // different network (e.g. local dev) may have left pointed elsewhere.
   function getReadContract() {
     if (contract) return contract;
     if (!readContract) {
-      readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, new ethers.JsonRpcProvider(NETWORK_PARAMS.rpcUrls[0]));
+      const target = getBuildTargetNetwork();
+      const addr = (target && target.contractAddress) || CONTRACT_ADDRESS;
+      readContract = new ethers.Contract(addr, ABI, new ethers.JsonRpcProvider(NETWORK_PARAMS.rpcUrls[0]));
     }
     return readContract;
   }
 
   // ---------- owner side ----------
   async function refreshOwnerVault() {
+    if (!myAddress) {
+      $('createDoc').style.display = 'block';
+      $('vaultDoc').style.display = 'none';
+      ownerDeadline = null;
+      ownerTotalInterval = null;
+      ownerCiphertext = null;
+      ownerReencryptTarget = null;
+      $('reencryptPrompt').hidden = true;
+      return;
+    }
     try {
-      const v = await contract.getVault(myAddress);
+      // getReadContract(), not contract directly — this needs to work
+      // even when the wallet is on the wrong chain (read-only mode): the
+      // owner should see their real vault state regardless of what
+      // network their wallet happens to be sitting on right now.
+      const v = await getReadContract().getVault(myAddress);
       $('createDoc').style.display = 'none';
       $('vaultDoc').style.display = 'block';
       $('fBalance').textContent = fmtBOT(v.balance);
@@ -2435,6 +2572,7 @@
     setBusy($('createBtn'), true, 'Encrypting…');
     note($('createMsg'), 'Encrypting the letter…');
     try {
+      await ensureChainForAction();
       const encrypted = useRegisteredKey
         ? await window.BeneficiaryCrypto.encryptFor(msg, benRegistration.pubKeyRaw, benRegistration.version)
         : await encryptMessage(msg, pass);
@@ -2450,7 +2588,7 @@
       await refreshOwnerVault();
     } catch (err) {
       console.error(err);
-      note($('createMsg'), friendlyError(err), 'err');
+      if (!handleChainOnboardingError(err)) note($('createMsg'), friendlyError(err), 'err');
     } finally { setBusy($('createBtn'), false); }
   }
 
@@ -2459,6 +2597,7 @@
     hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
+      await ensureChainForAction();
       const tx = await contract.checkIn();
       setBusy($('checkInBtn'), true, 'Recording…');
       await tx.wait();
@@ -2469,7 +2608,7 @@
       setTimeout(refreshOwnerVault, 3000);
       setTimeout(refreshOwnerVault, 8000);
     } catch (err) {
-      note($('ownerMsg'), friendlyError(err), 'err');
+      if (!handleChainOnboardingError(err)) note($('ownerMsg'), friendlyError(err), 'err');
     } finally { setBusy($('checkInBtn'), false); }
   }
 
@@ -2488,6 +2627,7 @@
     hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
+      await ensureChainForAction();
       const tx = await contract.deposit({ value: ethers.parseEther(amt) });
       setBusy($('depositConfirm'), true, 'Adding…');
       await tx.wait();
@@ -2498,7 +2638,7 @@
       refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
-      fieldError($('depositError'), friendlyError(err));
+      if (!handleChainOnboardingError(err)) fieldError($('depositError'), friendlyError(err));
     } finally { setBusy($('depositConfirm'), false); }
   }
 
@@ -2510,6 +2650,7 @@
     hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
+      await ensureChainForAction();
       const tx = await contract.withdraw(ethers.parseEther(amt));
       setBusy($('withdrawConfirm'), true, 'Withdrawing…');
       await tx.wait();
@@ -2520,7 +2661,7 @@
       refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
-      fieldError($('withdrawError'), friendlyError(err));
+      if (!handleChainOnboardingError(err)) fieldError($('withdrawError'), friendlyError(err));
     } finally { setBusy($('withdrawConfirm'), false); }
   }
 
@@ -2532,6 +2673,7 @@
     hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
+      await ensureChainForAction();
       const tx = await contract.updateBeneficiary(addr);
       setBusy($('changeBenConfirm'), true, 'Changing…');
       await tx.wait();
@@ -2554,7 +2696,7 @@
         noteTxSuccess($('ownerMsg'), 'Beneficiary changed.');
       }
     } catch (err) {
-      fieldError($('changeBenError'), friendlyError(err));
+      if (!handleChainOnboardingError(err)) fieldError($('changeBenError'), friendlyError(err));
     } finally { setBusy($('changeBenConfirm'), false); }
   }
 
@@ -2563,6 +2705,7 @@
     hideTxLink($('ownerTxLink'));
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
+      await ensureChainForAction();
       const tx = await contract.closeVault();
       setBusy($('closeConfirm'), true, 'Closing…');
       await tx.wait();
@@ -2572,7 +2715,7 @@
       refreshDirectConnectBalance();
       await refreshOwnerVault();
     } catch (err) {
-      note($('ownerMsg'), friendlyError(err), 'err');
+      if (!handleChainOnboardingError(err)) note($('ownerMsg'), friendlyError(err), 'err');
     } finally { setBusy($('closeConfirm'), false); }
   }
 
@@ -2787,6 +2930,7 @@
     hideTxLink($('claimTxLink'));
     note($('claimMsg'), 'Confirm in your wallet…');
     try {
+      await ensureChainForAction();
       const tx = await contract.claim(claimTargetOwner);
       setBusy($('claimBtn'), true, 'Breaking the seal…');
       note($('claimMsg'), 'Breaking the seal…');
@@ -2797,7 +2941,7 @@
       await loadClaimVault(claimTargetOwner);
     } catch (err) {
       console.error(err);
-      note($('claimMsg'), friendlyError(err), 'err');
+      if (!handleChainOnboardingError(err)) note($('claimMsg'), friendlyError(err), 'err');
     } finally { setBusy($('claimBtn'), false); }
   }
 
