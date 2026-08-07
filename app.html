@@ -1919,6 +1919,19 @@
     }
   }
 
+  // Received funds (e.g. from the faucet, or another wallet) don't fire
+  // any wallet event this app listens for — nothing here changed the
+  // balance, so nothing already triggers a refresh. Cheap eth_getBalance
+  // calls only, on whatever's most likely to mean "the balance might have
+  // changed": the tab regaining focus (came back from the faucet or a
+  // wallet app), becoming visible again (same idea, covers mobile
+  // backgrounding), and a light poll while connected as a catch-all.
+  // refreshDirectConnectBalance() itself already no-ops when nothing is
+  // connected, so none of these need to check that first.
+  window.addEventListener('focus', () => refreshDirectConnectBalance());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDirectConnectBalance(); });
+  setInterval(() => refreshDirectConnectBalance(), 15000);
+
   // Classifies a wallet_switchEthereumChain/wallet_addEthereumChain
   // rejection into one of two shapes handleConnectError knows how to show:
   // the user explicitly said no (4001 — not a failure, just a "try again"),
@@ -2216,7 +2229,16 @@
   // — which is what makes "stay connected across reload" and "restore after
   // returning from a mobile wallet app" work with no extra code here.
   window.__onAppKitAccount = async (account) => {
-    window.__wcLog && window.__wcLog('account', { isConnected: account?.isConnected, address: account?.address });
+    window.__wcLog && window.__wcLog('account', { isConnected: account?.isConnected, address: account?.address, usingDirectConnect });
+
+    // AppKit's module loads async and reports its own restored state
+    // (or lack of one) whenever it's ready — which can land well after a
+    // direct-connect session (via eth_accounts auto-reconnect, or a
+    // manual click) has already been established. AppKit reporting
+    // "not connected" is only true of AppKit's own connection; it must
+    // never tear down a session it didn't create.
+    if (usingDirectConnect) return;
+
     hideWrongNetworkBanner();
 
     if (!account || !account.isConnected || !account.address) {
@@ -2249,6 +2271,18 @@
     }
   };
 
+  // Shared finish for both the button-click path (eth_requestAccounts,
+  // which can prompt) and the silent auto-reconnect path (eth_accounts,
+  // which never prompts) — everything past "we have an authorized
+  // account" is identical either way.
+  async function connectWithAccounts(accounts, source) {
+    if (!accounts || !accounts[0]) throw new Error('No account returned by wallet.');
+    const netKey = await connectWithEth(window.ethereum);
+    usingDirectConnect = true;
+    renderDirectConnectPill();
+    window.__wcLog && window.__wcLog('account:ready (' + source + ')', { address: myAddress, network: netKey });
+  }
+
   // Bypasses AppKit entirely: talks straight to window.ethereum with
   // eth_requestAccounts, no wallet_switchEthereumChain, no AppKit session
   // cache. Exists because AppKit's connect flow was found to actively
@@ -2272,17 +2306,38 @@
       window.__wcLog && window.__wcLog('eth_requestAccounts:call');
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       window.__wcLog && window.__wcLog('eth_requestAccounts:ok', { accounts });
-      if (!accounts || !accounts[0]) throw new Error('No account returned by wallet.');
-      const netKey = await connectWithEth(window.ethereum);
-      usingDirectConnect = true;
-      renderDirectConnectPill();
-      window.__wcLog && window.__wcLog('account:ready (direct)', { address: myAddress, network: netKey });
+      await connectWithAccounts(accounts, 'direct');
     } catch (err) {
       window.__wcLog && window.__wcLog('connectDirect:error', plainifyError(err));
       handleConnectError(err);
     }
   }
   $('directConnectBtn').addEventListener('click', connectDirect);
+
+  // Silent session restore on load — eth_accounts NEVER prompts; it just
+  // reports whichever accounts this site is already authorized for
+  // (MetaMask and friends remember that permission across reloads on
+  // their own). Empty means either this site was never connected here,
+  // or the user revoked access in the wallet — either way, show Connect
+  // Wallet rather than asking again. AppKit sessions restore on their
+  // own via appKit.subscribeAccount firing with the current state as
+  // soon as it's subscribed (see the module script above) — this only
+  // covers the direct-connect path, which has no persistence of its own.
+  async function tryAutoReconnect() {
+    if (typeof window.ethereum === 'undefined') return;
+    try {
+      window.__wcLog && window.__wcLog('eth_accounts:call');
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      window.__wcLog && window.__wcLog('eth_accounts:ok', { accounts });
+      if (!accounts || !accounts[0]) return;
+      await connectWithAccounts(accounts, 'auto-reconnect');
+    } catch (err) {
+      // Silent by design — this is a background convenience running
+      // before the user has done anything, not a response to an action,
+      // so it never surfaces an error. connectBtn is still right there.
+      window.__wcLog && window.__wcLog('tryAutoReconnect:error', plainifyError(err));
+    }
+  }
   // There's no universal EIP-1193 "revoke" call an injected provider is
   // guaranteed to support — for a direct-connect session this clears the
   // app's own state only; the extension itself stays connected until the
@@ -2332,6 +2387,7 @@
     window.__recordEarly('connect-ui:setup-error', { message: err.message, stack: err.stack });
     throw err;
   }
+  tryAutoReconnect();
 
   // AppKit's subscribeCaipNetworkChange only fires for switches AppKit
   // itself initiated (its own network-switcher UI). A user switching
