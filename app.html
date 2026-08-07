@@ -307,7 +307,7 @@
     border-bottom: 1px solid transparent; border-radius: 0;
   }
   .tab:hover:not(:disabled) { background: none; color: var(--text); }
-  .tab:focus-visible { box-shadow: none; outline: none; border-bottom-color: var(--muted); }
+  .tab:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus-color); border-radius: var(--radius-sm); }
   .tab.active { color: var(--text); border-bottom: 1px solid var(--wax); font-weight: 600; }
 
   /* ---------- the document card (laid paper) ---------- */
@@ -321,9 +321,10 @@
     margin: var(--space-3) var(--space-1) var(--space-6);
   }
   .doc h2 {
-    font-size: var(--text-sm); font-family: var(--font-data); font-weight: 500;
-    letter-spacing: 0.24em; text-transform: uppercase;
-    text-align: center; margin: 0 0 var(--space-5); color: var(--muted);
+    font-size: var(--text-2xl); font-family: var(--font-display); font-weight: 600;
+    font-style: italic; letter-spacing: 0.01em; text-transform: none;
+    text-align: center; margin: 0 0 var(--space-6); color: var(--text);
+    text-shadow: 1px 1px 1px rgba(22, 11, 14, 0.35), -1px -1px 0 rgba(255, 255, 255, 0.6);
   }
 
   .inline { display: flex; gap: var(--space-3); }

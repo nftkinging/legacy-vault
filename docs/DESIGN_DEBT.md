@@ -3,14 +3,25 @@
 Parked, not resolved. Do not silently drop these; clear them explicitly before
 calling `docs/BRAND_DESIGN_BRIEF.md` done.
 
-- `app.html` picked up `brand.css`'s colour tokens but not its material system:
-  no letterpress deboss reads as intended, no paper grain, no consistent single
-  light source across surfaces.
+- **Partially resolved.** Auditing `app.html` against `brand.css` found the
+  material system (letterpress inputs, button depth/states, paper grain,
+  directional shadows, reduced-motion) was already correctly wired and
+  computed-style-verified — the one genuine gap was `.doc h2`: 14px IBM Plex
+  Mono uppercase in `--muted`, identical weight to a field label, with no
+  deboss treatment at all. Fixed: `.doc h2` is now `--text-2xl` Cormorant
+  Garamond italic in `--text`, with a debossed text-shadow using the same
+  light-from-upper-left convention already established for input letterpress
+  (dark shadow down-right, light rim up-left). Also fixed in the same pass:
+  `.tab:focus-visible` had its own one-off focus treatment (a 1px
+  `border-bottom-color` swap to `--muted`, with `box-shadow: none`) instead of
+  the `0 0 0 2px var(--focus-color)` ring every other interactive element
+  uses — brought in line.
 - The seal is absent from `app.html` in practice, despite being specified as
   the app's centrepiece and primary status display (brief section 9).
 - The landing CTA is a flat colour fill, not wax/foil material.
-- `app.html` has no hierarchy: everything is the same width, centred, and the
-  same weight, which is why it reads as templated rather than authored.
+- Layout hierarchy is still flat below the heading fix above: every card and
+  field is the same 680px-max-width column at the same weight, so the page
+  as a whole still reads as one long form rather than an authored sequence.
 - The app's first screen duplicates the landing page (wordmark, tagline,
   divider) instead of getting the owner/beneficiary to work immediately.
 
