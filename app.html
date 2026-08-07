@@ -1869,25 +1869,41 @@
     }
   });
 
+  // Short caller trace for the two functions below — cheap enough to take
+  // unconditionally (this isn't a hot path), and this is exactly the kind
+  // of "something reset the header, but from where?" question a plain log
+  // line can't answer on its own. Skips this function's own frame and the
+  // caller of clearConnectionState/renderHeaderConnectionState.
+  function shortStack() {
+    const lines = (new Error().stack || '').split('\n').slice(3, 6);
+    return lines.map(l => l.trim()).join(' | ');
+  }
+
   // Fully clears connection state — used on disconnect, on a failed/wrong-
   // network connect, and as the baseline before every reconnect attempt so
   // stale state never lingers across an account or network switch.
   function clearConnectionState() {
+    window.__wcLog && window.__wcLog('clearConnectionState', { myAddressWas: myAddress, usingDirectConnectWas: usingDirectConnect, at: shortStack() });
     provider = signer = contract = myAddress = currentEth = undefined;
     usingDirectConnect = false;
     $('createBtn').disabled = true;
     $('findBtn').disabled = true;
     $('lookupBtn').disabled = true;
-    renderDirectConnectPill();
+    renderHeaderConnectionState();
     refreshOwnerVault(); // myAddress is now undefined too; falls back to the empty "create" view
   }
 
-  // Shows/hides the header's connected-state pill — the one connected-state
-  // UI for both connect paths (connectDirect() or an AppKit/WalletConnect
-  // session), keyed off myAddress rather than usingDirectConnect, so it
-  // reflects either equally and the header never shows two conflicting
-  // connect states at once.
-  function renderDirectConnectPill() {
+  // The single source of truth for the header's connect UI — the only
+  // function anywhere that touches connectBtn's display or
+  // directConnectPill's hidden state. Every place that changes the
+  // connection (clearConnectionState, connectWithAccounts,
+  // __onAppKitAccount, the chainChanged/accountsChanged listeners) ends
+  // by calling this rather than touching either element itself, so the
+  // header can never drift from what those two elements' toggles say vs.
+  // what's actually true — it's derived fresh from myAddress every time,
+  // never incrementally patched.
+  function renderHeaderConnectionState() {
+    window.__wcLog && window.__wcLog('renderHeaderConnectionState', { myAddress, usingDirectConnect, at: shortStack() });
     const pill = $('directConnectPill');
     if (myAddress) {
       pill.hidden = false;
@@ -1905,7 +1921,7 @@
   // Beyond cosmetics — seeing you have gas before attempting a
   // transaction is the same problem the claim-screen gas warning solves
   // (checkClaimGasBalance), just for the owner-side actions too. Called
-  // after renderDirectConnectPill() (so it shows right after connecting)
+  // after renderHeaderConnectionState() (so it shows right after connecting)
   // and again after every transaction that can change this wallet's own
   // balance: seal, deposit, withdraw, close, claim (each pays gas; claim
   // also receives funds).
@@ -2264,7 +2280,7 @@
       if (!eth) throw new Error('Wallet provider not ready yet.');
 
       const netKey = await connectWithEth(eth);
-      renderDirectConnectPill();
+      renderHeaderConnectionState();
       window.__wcLog && window.__wcLog('account:ready', { address: myAddress, network: netKey });
     } catch (err) {
       handleConnectError(err);
@@ -2275,12 +2291,31 @@
   // which can prompt) and the silent auto-reconnect path (eth_accounts,
   // which never prompts) — everything past "we have an authorized
   // account" is identical either way.
+  //
+  // usingDirectConnect is set true BEFORE awaiting connectWithEth, not
+  // after — found by reproducing a real race: connectWithEth makes
+  // several network round trips (chain check, genesis verification, the
+  // vault read), and AppKit's own module loads and reports its restored
+  // state fully asynchronously. If AppKit's "not connected" event landed
+  // during one of those awaits, __onAppKitAccount's usingDirectConnect
+  // guard read false (not yet set) and called clearConnectionState(),
+  // wiping myAddress out from under this function — which itself would
+  // then go on to call renderHeaderConnectionState() with an address
+  // that no longer existed, silently reverting the header to Connect
+  // Wallet a moment after a fully successful connect. Setting the flag
+  // first closes that window entirely, and any AppKit event that lands
+  // mid-connect now correctly defers instead.
   async function connectWithAccounts(accounts, source) {
     if (!accounts || !accounts[0]) throw new Error('No account returned by wallet.');
-    const netKey = await connectWithEth(window.ethereum);
     usingDirectConnect = true;
-    renderDirectConnectPill();
-    window.__wcLog && window.__wcLog('account:ready (' + source + ')', { address: myAddress, network: netKey });
+    try {
+      const netKey = await connectWithEth(window.ethereum);
+      renderHeaderConnectionState();
+      window.__wcLog && window.__wcLog('account:ready (' + source + ')', { address: myAddress, network: netKey });
+    } catch (err) {
+      usingDirectConnect = false;
+      throw err;
+    }
   }
 
   // Bypasses AppKit entirely: talks straight to window.ethereum with
@@ -2402,7 +2437,7 @@
     window.ethereum.on('chainChanged', (chainIdHex) => {
       console.log('[LegacyVault] chainChanged event fired — wallet is now on', chainIdHex, '— re-resolving');
       if (usingDirectConnect) {
-        connectWithEth(window.ethereum).then(renderDirectConnectPill).catch(handleConnectError);
+        connectWithEth(window.ethereum).then(renderHeaderConnectionState).catch(handleConnectError);
       } else if (window.__legacyVaultAppKit) {
         window.__onAppKitAccount(window.__legacyVaultAppKit.getAccount());
       }
@@ -2419,7 +2454,7 @@
       if (!accounts || accounts.length === 0) {
         clearConnectionState();
       } else {
-        connectWithEth(window.ethereum).then(renderDirectConnectPill).catch(handleConnectError);
+        connectWithEth(window.ethereum).then(renderHeaderConnectionState).catch(handleConnectError);
       }
     });
   }
