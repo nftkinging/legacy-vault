@@ -68,25 +68,44 @@ Two follow-ups to note:
 
 ## Chain quirk — chain 968 registry collision with Datagram (testnet only)
 
-Confirmed directly against ethereum-lists/chains (the source chainlist.org
-and most wallets read from): chain ID 968 is registered to a different,
-unrelated project — Datagram (DGRAM) — with a different name, currency
-symbol, and RPC than BOT Chain's. Registry policy doesn't allow
-reassigning a chain ID once claimed, so this collision is permanent for
-testnet; it isn't something we can get fixed upstream.
+**CONFIRMED ON-DEVICE** (Zerion mobile, `?debug=1` capture). Chain ID 968
+is registered to a different, unrelated project — Datagram (DGRAM) — in
+ethereum-lists/chains, with a different name, currency symbol, and RPC
+than BOT Chain's. Registry policy doesn't allow reassigning a chain ID
+once claimed, so this collision is permanent for testnet; it isn't
+something we can get fixed upstream.
 
-**Suspected cause of mobile `wallet_addEthereumChain` failures.** Desktop
-MetaMask has been reliable adding the network automatically in testing;
-multiple mobile wallets have not. The working theory is that mobile
-wallets validate `wallet_addEthereumChain`'s params against the registry
-more strictly than desktop does and reject ours as a mismatch — but this
-is **not yet confirmed on-device**. `app.html` now surfaces the manual
-network-entry fallback proactively on mobile (before the automatic
-attempt even runs, not only after it fails) as an honest workaround, with
-copy that says plainly this is a workaround for a collision we don't
-control, not a fix for it. Capturing the actual `wallet_addEthereumChain`
-error code/message on a real phone via `?debug=1` is still the open item
-that would confirm or rule out the hypothesis.
+**The real failure mode is a silent wrong-chain switch, not a rejected
+add — this was wrong in the original hypothesis.** The original theory
+was that `wallet_addEthereumChain` gets rejected by stricter mobile
+validation. The actual on-device log shows something different and worse:
+Zerion already has chain 968 registered as Datagram, so
+`wallet_switchEthereumChain` **succeeds** — it switches the wallet to
+Datagram's actual RPC, which happens to share the same numeric chain ID.
+`wallet_addEthereumChain` is never even called, because our own logic
+only calls it when the switch fails with "unrecognized chain" (4902); a
+successful switch to the wrong network doesn't trigger that path. The
+wallet then reports chainId `0x3c8` — correct — while genuinely talking
+to a different chain. The only thing that catches this is
+`tryResolveChain`'s genesis-hash check (`verifyGenuineBotChain`); chainId
+comparison alone would have shown this as a normal, successful connection.
+**Any wallet that already has Datagram registered under chain 968 cannot
+use BOT Chain testnet through the automatic switch/add flow at all** —
+manual network entry (removing/overwriting the existing 968 entry in the
+wallet's own UI) is the only way through, and even that depends on how a
+given wallet's manual-add flow handles an already-occupied chain ID.
+
+**Mitigation is platform-agnostic, not mobile-gated.** An earlier version
+of this fix used a mobile user-agent check to decide when to surface the
+manual-entry fallback proactively. That was wrong on two counts: the bug
+was never actually mobile-specific (it depends on whether a given wallet
+has Datagram registered, not on the device), and the UA check itself was
+fooled by Zerion's in-app browser, which reports a plain desktop Mac UA.
+`app.html` now surfaces the manual-entry fallback proactively on every
+platform whenever the target network has a registry collision, with copy
+describing the actual confirmed mechanism (silent switch to the wrong
+chain) rather than the original, incorrect "may be rejected" guess. Still
+a workaround for a collision we don't control, not a fix for it.
 
 **TESTNET ONLY.** Chain 677 (mainnet) is correctly registered to "BOT
 Chain Mainnet" in the same registry, with matching name, currency, and
@@ -99,3 +118,67 @@ Datagram's registered entry also advertises EIP1559 support, which may
 compound the separate `baseFeePerGas` quirk above — a wallet consulting
 the registry for chain 968 has a second, independent reason to assume
 EIP-1559 behavior that BOT Chain testnet doesn't actually have.
+
+---
+
+## AppKit auto-reconnects to an injected wallet on its own initiative
+
+Found via the same Zerion mobile `?debug=1` capture as the chain-968
+collision above: `appkit:CONNECT_SUCCESS` (`method:browser,
+reconnect:true`) fired roughly every 10 seconds, 25+ times in one
+session — entirely on Reown AppKit's own initiative, not from anything
+`app.html` calls. This app bypasses AppKit's `connect()` for every
+injected-wallet session (`connectDirect()`, see its own comment on why),
+so AppKit has no legitimate reason to be reconnecting to the same
+provider at all; it appears to auto-detect it via EIP-6963 and manage it
+independently regardless.
+
+Checked this SDK version's `AppKitOptions`/`Features` types for a flag to
+disable AppKit's own injected/EIP-6963 detection outright — none exists.
+Mitigated reactively instead: `app.html`'s `subscribeEvents` handler now
+calls `appKit.disconnect()` every time it sees `CONNECT_SUCCESS` while an
+injected wallet is present, severing AppKit's connector each time it
+reconnects. Verified the change doesn't break AppKit's own initialization
+(module still loads and `disconnect` is a real callable method), but
+**could not reproduce the actual auto-reconnect trigger in headless
+Chrome** — a synthetic EIP-6963 announcement wasn't enough to make AppKit
+attempt its own connect without a real prior session for it to restore,
+so the disconnect call itself is unverified against a live loop. Needs
+re-testing against a real device (Zerion or another wallet that
+previously exhibited this) to confirm the loop actually stops.
+
+Plausible, not confirmed, connection to the WebKit crash below: the loop
+would repeatedly re-enter AppKit's own reconnect-success handling code,
+which is where the crash appears to originate.
+
+---
+
+## Uncaught ReferenceError on WebKit: "Can't find variable: extractInfo"
+
+Captured via the same Zerion mobile `?debug=1` session — an uncaught
+error at ~208ms into page load, WebKit only. `extractInfo` does not
+appear anywhere in this repo (`app.html`, `config.js`,
+`beneficiary-crypto.js`, `index.html` — checked directly). It isn't a
+name this codebase uses.
+
+Two real possibilities, neither confirmed:
+1. It's inside the Reown AppKit / WalletConnect dependency graph loaded
+   from esm.sh — a wallet-info-extraction helper is a plausible name for
+   something in their connect/reconnect-success handling, which would tie
+   it to the reconnect loop above. Spent real effort trying to locate it
+   directly in the fetched AppKit bundle chunks and via GitHub code
+   search; came up empty, but AppKit's dependency graph is large and
+   chunked, and this doesn't rule it out.
+2. It's from Zerion's own in-app-browser injected script (many in-app
+   wallet browsers inject a content script into the page for
+   `window.ethereum`/EIP-6963 setup) — same-document injected scripts
+   aren't cross-origin-redacted the way a separate `<script src>` would
+   be, so a full "Can't find variable" message is consistent with this
+   too, and wouldn't be anything in our control at all.
+
+Not fixed — there was nothing in our own code to fix. If this recurs,
+worth checking whether it still happens with the AppKit reconnect-loop
+mitigation above in place (since that may stop AppKit from re-entering
+whatever code path throws this), and whether it reproduces on WebKit
+outside of Zerion specifically (Safari directly, or another WebKit-based
+in-app browser) to help distinguish the two possibilities above.

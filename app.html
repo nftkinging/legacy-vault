@@ -535,11 +535,19 @@
   </div>
 
   <!-- Revealed on any add-chain failure (handleChainOnboardingError), and
-       proactively on mobile before the automatic attempt even runs (see
-       ensureWalletHasChain — IS_MOBILE_UA) since that's the case the
-       registry collision is suspected to actually block, not just
-       mislabel. A single small link, not a button, since it's still the
-       secondary path everywhere else. -->
+       proactively, on every platform, whenever the target network has a
+       registry collision (see ensureWalletHasChain) — confirmed on-device
+       (Zerion mobile) that a wallet which already has chain 968
+       registered as Datagram silently switches to Datagram's RPC instead
+       of ours while still reporting the right chain ID, so the automatic
+       path can leave the wallet on the wrong chain without ever failing
+       loudly. Not gated on any device/platform check: user-agent sniffing
+       was tried and found unreliable (Zerion's in-app browser reports a
+       plain desktop Mac UA), and there's no honest way to guess which
+       wallets already have Datagram registered — so this shows
+       everywhere the collision could apply, not just on a guessed subset
+       of devices. A single small link, not a button, since it's still
+       the secondary path everywhere else. -->
   <p id="manualNetworkToggleRow" hidden style="text-align:center; margin: var(--space-2) 0 var(--space-4);">
     <button type="button" id="manualNetworkToggle" class="debug-log-toggle">Enter the network details manually instead</button>
   </p>
@@ -1035,7 +1043,30 @@
     // dangling." Both funnel into the same __wcLog sink as our own code,
     // so the debug panel shows one merged timeline instead of two.
     appKit.subscribeEvents(event => {
-      if (window.__wcLog) window.__wcLog('appkit:' + (event?.data?.event || 'event'), event?.data?.properties);
+      const eventName = event?.data?.event;
+      if (window.__wcLog) window.__wcLog('appkit:' + (eventName || 'event'), event?.data?.properties);
+      // AppKit auto-detects and independently manages an injected provider
+      // via EIP-6963 regardless of whether our own code ever calls
+      // appKit.connect() — confirmed on-device (Zerion mobile, ?debug=1):
+      // CONNECT_SUCCESS with reconnect:true fired every ~10s, 25+ times in
+      // one session, entirely on AppKit's own initiative. This app owns
+      // every injected-wallet connection itself via connectDirect()
+      // specifically because AppKit's own connect() flow was found to
+      // force a network switch that could abort the whole connection (see
+      // that function's comment) — so when window.ethereum exists, AppKit
+      // reconnecting to it on its own is a competing, unwanted connection
+      // to the exact same provider, not a real session we use for
+      // anything. No documented option in this SDK version (checked:
+      // AppKitOptions, Features) disables AppKit's own injected/EIP-6963
+      // detection outright, so this reacts to it instead: sever it every
+      // time it reconnects, rather than leave it running a background loop
+      // whose only observed effects so far are the reconnect churn itself
+      // and (plausibly, not confirmed) a WebKit crash inside AppKit's own
+      // bundle that fires around this exact kind of event.
+      if (eventName === 'CONNECT_SUCCESS' && typeof window.ethereum !== 'undefined') {
+        window.__wcLog && window.__wcLog('appkit:auto-reconnect-detected-disconnecting', event?.data?.properties);
+        appKit.disconnect().catch(err => window.__wcLog && window.__wcLog('appkit:disconnect-after-auto-reconnect:error', plainifyError(err)));
+      }
     });
     appKit.getUniversalProvider().then(universalProvider => {
       if (!universalProvider || !universalProvider.client) return;
@@ -1065,12 +1096,6 @@
   // ---- CONFIG: shared with index.html via config.js ----
   let CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
-  // Used to surface the manual network-entry fallback proactively rather
-  // than only after wallet_addEthereumChain has already failed once — see
-  // ensureWalletHasChain's own comment on why mobile specifically gets
-  // this earlier. A plain UA sniff, not a capability check: there's no
-  // feature to detect here, just "which device is this."
-  const IS_MOBILE_UA = /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
 
   // Stable reference to this build's actual target network (testnet here,
   // mainnet in a mainnet build). NETWORK_PARAMS above is captured once and
@@ -2040,37 +2065,30 @@
   // prompt fires, not after, since the wallet's own popup can otherwise
   // cover this page entirely.
   //
-  // On mobile specifically, the manual-entry fallback is surfaced right
-  // here too — before wallet_addEthereumChain has even run, not only
-  // after it fails. This is a workaround for a registry collision we
-  // don't control (chain 968 is registered to a different, unrelated
-  // project — Datagram — in ethereum-lists/chains, with a different
-  // name/symbol/RPC than ours), not a fix for it: we can't change what's
-  // in that registry or how a given wallet validates against it. Desktop
-  // MetaMask has been reliable adding it automatically in testing; mobile
-  // wallets validating more strictly against the same registry data is
-  // the suspected (not yet on-device confirmed) reason mobile has been
-  // less reliable. The automatic attempt still runs either way — this
-  // just stops making a mobile user wait through a prompt likely to fail
-  // before they see the option that's more likely to actually work.
+  // The manual-entry fallback is surfaced right here too, on every
+  // platform — before either prompt has even run, not only after one
+  // fails. Confirmed on-device (Zerion mobile, ?debug=1): a wallet that
+  // already has chain 968 registered as Datagram calls
+  // wallet_switchEthereumChain, gets back success, and is left sitting on
+  // Datagram's actual RPC while still reporting chainId 0x3c8 — wrong
+  // network, right ID, no error to catch at the switch call itself.
+  // wallet_addEthereumChain is never even reached in that case, since
+  // switching "worked." Only the genesis-hash check in tryResolveChain
+  // catches this (see verifyGenuineBotChain) — this app's chainId match
+  // alone would have shown it as connected. This is why the fallback
+  // isn't gated on a guessed platform: a first attempt used a mobile
+  // user-agent check, and Zerion's own in-app browser reported a plain
+  // desktop Mac UA, defeating it entirely. There's no reliable way to
+  // guess which wallets already have Datagram registered from here, on
+  // any platform, so this shows everywhere the collision could apply.
+  // Still a workaround for a registry collision we don't control, not a
+  // fix for it — the automatic attempt still runs regardless.
   async function ensureWalletHasChain(eth) {
-    window.__wcLog && window.__wcLog('ensureWalletHasChain:start', { isMobileUA: IS_MOBILE_UA });
+    window.__wcLog && window.__wcLog('ensureWalletHasChain:start');
     const target = getBuildTargetNetwork();
     if (target && target.registryCollisionWarning) {
-      const message = IS_MOBILE_UA
-        // Honest about what this is (a workaround for a registry
-        // collision, not a fix for it) and about what's actually
-        // confirmed: the collision itself is real (checked directly
-        // against ethereum-lists/chains); mobile wallets rejecting the
-        // automatic add because of it is the suspected cause of reports
-        // seen so far, not something confirmed device-by-device.
-        ? `Adding ${target.name} to your wallet — ${target.registryCollisionWarning} On some mobile wallets this automatic step can fail outright rather than just show the wrong name. If it does, use "Enter the network details manually" below instead of retrying — that skips the registry check entirely.`
-        : `Adding ${target.name} to your wallet — ${target.registryCollisionWarning}`;
-      showWrongNetworkBanner(message);
-      if (IS_MOBILE_UA) {
-        $('manualNetworkToggleRow').hidden = false;
-        window.__wcLog && window.__wcLog('ensureWalletHasChain:manual-fallback-surfaced-proactively');
-      }
+      showWrongNetworkBanner(`Adding ${target.name} to your wallet — ${target.registryCollisionWarning} If your wallet already knows chain 968 as a different network, it may switch to that instead — silently, while still reporting the right chain ID. If actions here keep saying you're on the wrong network after switching, use "Enter the network details manually" below rather than retrying.`);
+      $('manualNetworkToggleRow').hidden = false;
     }
     window.__wcLog && window.__wcLog('wallet_switchEthereumChain:call', { chainId: NETWORK_PARAMS.chainId });
     try {
