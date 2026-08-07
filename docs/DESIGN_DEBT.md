@@ -194,3 +194,16 @@ mitigation above in place (since that may stop AppKit from re-entering
 whatever code path throws this), and whether it reproduces on WebKit
 outside of Zerion specifically (Safari directly, or another WebKit-based
 in-app browser) to help distinguish the two possibilities above.
+
+---
+
+## Bookkeeping note — mislabeled commit subject
+
+Commit `a54071d` ("Check balance before writing; stop guessing 'stale
+contract'; quiet the beneficiary hint") has a subject line copy-pasted
+from an earlier, unrelated commit — the body text is correct and
+describes what the commit actually does (the Datagram registry-collision
+detection: `registryCollisionBlocked`, the new `tryResolveChain` shape,
+`registryCollisionNetworkName` in `config.js`). Left as-is rather than
+amended/force-pushed over `main`; noted here so `git log` browsing isn't
+misled by the subject alone.
