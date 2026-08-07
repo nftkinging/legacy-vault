@@ -1234,7 +1234,23 @@
         window.__wcLog && window.__wcLog('appkit:connect-success-observed', { usingDirectConnect, injectedViaAppKit, properties: event?.data?.properties });
       }
     });
+    // Desktop Safari with no injected wallet reported as hanging
+    // indefinitely on this exact path — the connect modal just keeps
+    // loading and never resolves, while the same flow works fine on
+    // desktop/MetaMask's in-app browser. Never reproduced or diagnosed;
+    // instrumented instead of guessed at a fix, per instruction. This
+    // .catch(() => {}) used to swallow any rejection here silently —
+    // exactly the kind of gap that could hide a Safari-specific failure
+    // (WalletConnect's SignClient needs IndexedDB and a relay-server
+    // websocket connection to initialize; either could plausibly behave
+    // differently under Safari's storage/tracking restrictions than under
+    // Chromium). Logged now instead.
+    window.__wcLog && window.__wcLog('appkit:getUniversalProvider:call');
     appKit.getUniversalProvider().then(universalProvider => {
+      window.__wcLog && window.__wcLog('appkit:getUniversalProvider:resolved', {
+        present: !!universalProvider,
+        hasClient: !!(universalProvider && universalProvider.client)
+      });
       if (!universalProvider || !universalProvider.client) return;
       ['session_proposal', 'proposal_expire', 'session_connect', 'session_delete', 'session_expire']
         .forEach(evtName => {
@@ -1249,7 +1265,41 @@
             });
           } catch (e) { /* older/newer client shape — skip that one event */ }
         });
-    }).catch(() => {});
+      // The relay is the actual websocket connection carrying the
+      // WalletConnect protocol (to relay.walletconnect.org or similar) —
+      // if IT never connects, no QR/pairing can ever succeed regardless
+      // of anything else here, and that would look exactly like "the
+      // modal just keeps loading." Best-effort: this reaches into
+      // UniversalProvider's own internals (client.core.relayer), which
+      // isn't part of any documented public API, so every step is
+      // defensively guarded and any failure to even find these objects
+      // is itself logged rather than silently skipped.
+      try {
+        const relayer = universalProvider.client.core && universalProvider.client.core.relayer;
+        if (relayer) {
+          window.__wcLog && window.__wcLog('appkit:relayer:found', {
+            connected: relayer.connected,
+            connecting: relayer.connecting
+          });
+          if (relayer.core && relayer.core.relayUrl) {
+            window.__wcLog && window.__wcLog('appkit:relayer:url', { relayUrl: relayer.core.relayUrl });
+          }
+          ['relayer_connect', 'relayer_disconnect', 'relayer_error'].forEach(evtName => {
+            try {
+              relayer.on(evtName, data => {
+                window.__wcLog && window.__wcLog('wc:' + evtName, plainifyError(data));
+              });
+            } catch (e) { /* event name not present on this version — skip */ }
+          });
+        } else {
+          window.__wcLog && window.__wcLog('appkit:relayer:not-found');
+        }
+      } catch (err) {
+        window.__wcLog && window.__wcLog('appkit:relayer:inspection-error', plainifyError(err));
+      }
+    }).catch(err => {
+      window.__wcLog && window.__wcLog('appkit:getUniversalProvider:error', plainifyError(err));
+    });
 
     window.dispatchEvent(new Event('legacyvault:appkit-ready'));
   } catch (err) {
@@ -1399,8 +1449,33 @@
   // in-flight pairing for *this* attempt to race with — pairing
   // generation only starts once the user picks a WalletConnect-based
   // wallet, a later, separate step.
+  // Desktop Safari with no injected wallet reported as hanging
+  // indefinitely on this exact modal — instrumented rather than guessed
+  // at, per instruction (see also getUniversalProvider's own comment
+  // above). If the modal opens and just never resolves — no
+  // CONNECT_SUCCESS, no CONNECT_ERROR, no close — within a generous
+  // window, log a stall marker with the full log up to that point, so a
+  // ?debug=1 capture from a real Safari session shows exactly how long
+  // it sat there and what (if anything) happened last. 20s is well past
+  // any real network round trip; a human still reading a QR code by then
+  // is normal and this fires regardless, but the timestamp on THIS entry
+  // is what tells the stall apart from "still legitimately waiting."
+  let modalStallWatchdog = null;
   window.__onAppKitModalStateChange = (state) => {
-    window.__wcLog && window.__wcLog('modal:' + (state.open ? 'open' : 'close'));
+    window.__wcLog && window.__wcLog('modal:' + (state.open ? 'open' : 'close'), {
+      isConnectedState: window.__legacyVaultAppKit && window.__legacyVaultAppKit.getIsConnectedState(),
+      hasInjectedWallet: typeof window.ethereum !== 'undefined'
+    });
+    if (modalStallWatchdog) { clearTimeout(modalStallWatchdog); modalStallWatchdog = null; }
+    if (state.open) {
+      modalStallWatchdog = setTimeout(() => {
+        window.__wcLog && window.__wcLog('appkit:modal-open-stalled', {
+          waitedMs: 20000,
+          isConnectedState: window.__legacyVaultAppKit && window.__legacyVaultAppKit.getIsConnectedState(),
+          hasInjectedWallet: typeof window.ethereum !== 'undefined'
+        });
+      }, 20000);
+    }
     const appKit = window.__legacyVaultAppKit;
     if (appKit && !appKit.getIsConnectedState()) clearStaleWalletConnectPairings(state.open ? 'modal-open' : 'modal-close');
   };
@@ -2773,21 +2848,39 @@
         window.__wcLog && window.__wcLog('tryAutoReconnect:already-connected-deferring');
         return;
       }
-      // Resolves the header out of "unknown" the moment the real answer is
-      // known, rather than leaving it to the 3s backstop timeout — that
-      // timeout exists for a hung RPC, not for an empty (valid, fast)
-      // response like this one.
-      if (!accounts || !accounts[0]) { setHeaderState('disconnected'); return; }
+      // An empty result here only rules out ONE path (this specific
+      // injected wallet never authorized the site directly) — it says
+      // nothing about a session AppKit itself might still be restoring
+      // (WalletConnect, or an injected connector reached only through
+      // AppKit's modal — see __onAppKitAccount). This used to render
+      // 'disconnected' immediately on empty, reasoning that an empty
+      // response is fast and definitive, not a hang worth waiting out —
+      // that was wrong once AppKit's modal became a real second source of
+      // truth: found live, this is exactly what caused the header to
+      // flash "Connect Wallet" for ~2s before flipping to connected on a
+      // machine where the local wallet extension wasn't the one that
+      // authorized the site, but a WalletConnect-restored session was
+      // still legitimately about to succeed. Leaves the header in
+      // 'unknown' instead — setHeaderState's own 3s backstop timer is now
+      // the single place "confirmed nothing to restore" gets decided,
+      // and a successful AppKit restore (or this same function winning a
+      // second race, see connectWithAccounts below) clears that timer the
+      // normal way.
+      if (!accounts || !accounts[0]) {
+        window.__wcLog && window.__wcLog('tryAutoReconnect:no-account-here-deferring-to-appkit-or-backstop');
+        return;
+      }
       await connectWithAccounts(accounts, 'auto-reconnect');
     } catch (err) {
       // Silent by design — this is a background convenience running
       // before the user has done anything, not a response to an action,
-      // so it never surfaces an error. connectBtn is still right there,
-      // and the header still needs to resolve out of "unknown" now that
-      // the answer (however unwelcome) is in — no reason to wait out the
-      // full 3s backstop for an error that already happened.
+      // so it never surfaces an error. Also deliberately does NOT resolve
+      // the header to 'disconnected' here, for the same reason as the
+      // empty-accounts case above — an error reading THIS wallet's
+      // eth_accounts says nothing about whether AppKit itself still has a
+      // session to restore. The 3s backstop is still there for a
+      // genuinely dead end.
       window.__wcLog && window.__wcLog('tryAutoReconnect:error', plainifyError(err));
-      setHeaderState('disconnected');
     } finally {
       directConnectResolving = false;
     }
@@ -2830,9 +2923,27 @@
   window.__recordEarly('connect-ui:before-setup', { hasInjectedWallet: typeof window.ethereum !== 'undefined' });
   try {
     $('connectBtn').addEventListener('click', () => {
-      window.__wcLog && window.__wcLog('connectBtn:click', { hasInjectedWallet: typeof window.ethereum !== 'undefined', appKitReady: !!window.__legacyVaultAppKit });
+      window.__wcLog && window.__wcLog('connectBtn:click', { hasInjectedWallet: typeof window.ethereum !== 'undefined', appKitReady: !!window.__legacyVaultAppKit, userAgent: navigator.userAgent });
       if (window.__legacyVaultAppKit) {
-        window.__legacyVaultAppKit.open();
+        // .open() itself is logged separately (call + settle) — desktop
+        // Safari with no injected wallet reported this exact modal
+        // hanging indefinitely, never reproduced here, instrumented
+        // instead of guessed at. If .open() ever rejects or throws
+        // synchronously, that's worth seeing in ?debug=1 too, not just
+        // whatever the modal's own UI shows (or doesn't).
+        window.__wcLog && window.__wcLog('appkit:open:call');
+        try {
+          const openResult = window.__legacyVaultAppKit.open();
+          if (openResult && typeof openResult.then === 'function') {
+            openResult
+              .then(() => window.__wcLog && window.__wcLog('appkit:open:resolved'))
+              .catch(err => window.__wcLog && window.__wcLog('appkit:open:rejected', plainifyError(err)));
+          } else {
+            window.__wcLog && window.__wcLog('appkit:open:returned-non-promise');
+          }
+        } catch (err) {
+          window.__wcLog && window.__wcLog('appkit:open:threw', plainifyError(err));
+        }
       } else {
         // AppKit's module (esm.sh) hasn't finished loading yet — rare.
         // Transient, tied to this one click, not a standing banner.

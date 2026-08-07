@@ -307,6 +307,95 @@ across repeated runs. Still not confirmed against AppKit's real modal UI
 
 ---
 
+## Header flashed "Connect Wallet" for ~2s before flipping to connected
+
+Regressed by the same AppKit-modal rework, found via the wallet test
+checklist (item 6). `tryAutoReconnect`'s empty-`eth_accounts` branch used
+to call `setHeaderState('disconnected')` immediately — reasoning that an
+empty, fast RPC response was "the real answer," not worth waiting out the
+3s backstop for. That stopped being true once AppKit's own modal became a
+real second connect path: an empty `eth_accounts` result only rules out
+the local injected wallet directly authorizing the site — it says nothing
+about a session AppKit itself might still be restoring (WalletConnect, or
+an injected connector reached only through AppKit's modal, restored via
+`__onAppKitAccount`). On a machine where the local extension wasn't the
+thing that authorized the site but a WalletConnect session was still
+about to restore, this rendered 'disconnected' immediately, then flipped
+to 'connected' once AppKit's own restore actually completed a couple of
+seconds later — the exact flash reported.
+
+Fixed by removing the premature `setHeaderState('disconnected')` call
+from both the empty-accounts branch and the catch block — `tryAutoReconnect`
+now only ever resolves the header to 'disconnected' by deferring (doing
+nothing) when it has no account of its own, leaving `setHeaderState`'s
+existing 3s backstop timer as the single place "confirmed nothing to
+restore" gets decided. A successful restore from either
+`tryAutoReconnect` or AppKit's own `__onAppKitAccount` clears that timer
+normally. Cost: a user with genuinely no prior session now always waits
+the full 3s to see Connect Wallet, instead of resolving instantly on an
+empty response — a deliberate trade for correctness, per the explicit
+"never render Connect Wallet while state is unknown" instruction this was
+tested against.
+
+Verified in headless the same way as the original three-state fix: header
+state polled every 50ms through a simulated slow load (fast-but-empty
+`eth_accounts`, AppKit-style restore completing ~2s later) —
+`connectBtn`'s computed display never left `none` at any sampled point
+while the session existed. Separately confirmed the genuinely-no-session
+case still resolves to 'disconnected' via the 3s backstop, not stuck in
+'unknown' forever.
+
+---
+
+## Desktop Safari (no injected wallet) reported hanging on AppKit's own connect modal
+
+Reported via the wallet test checklist: on desktop Safari with no
+injected wallet — the one remaining path that still depends on AppKit's
+own `connect()` (WalletConnect/QR, since `SafeInjectedEthersAdapter` only
+intercepts non-WalletConnect connectors) — the modal opens and just keeps
+loading, never resolving. Reproduces reliably on that one platform;
+desktop with an injected wallet and MetaMask's in-app browser are both
+fine. **Not reproduced or diagnosed here** — no macOS/Safari available in
+this environment, and AppKit's real modal doesn't render in the headless
+Chrome harness used throughout this file (noted repeatedly above).
+Instrumented instead of guessing at a fix, per instruction:
+
+- `appKit.getUniversalProvider().catch(() => {})` used to swallow any
+  rejection silently — exactly the kind of gap that could hide a
+  Safari-specific failure (WalletConnect's SignClient needs IndexedDB and
+  a relay-server websocket to initialize; either could plausibly behave
+  differently under Safari's storage/tracking restrictions than under
+  Chromium). Now logs `appkit:getUniversalProvider:call` /
+  `:resolved` / `:error`.
+- Best-effort relay-level instrumentation reaching into
+  `universalProvider.client.core.relayer` (undocumented internals, every
+  step defensively guarded and logged even on failure to find these
+  objects) — logs whether the relayer is found, its `connected`/
+  `connecting` state, its `relayUrl`, and `relayer_connect`/
+  `_disconnect`/`_error` events if the SDK exposes them.
+- `connectBtn`'s click handler now logs `appkit:open:call`, then
+  `:resolved`/`:rejected`/`:threw` depending on what `appKit.open()`
+  actually does.
+- `__onAppKitModalStateChange` now logs `isConnectedState` and
+  `hasInjectedWallet` alongside open/close, and arms a 20s stall
+  watchdog on open — logs `appkit:modal-open-stalled` if the modal is
+  still open with nothing resolved by then, so a `?debug=1` capture from
+  a real Safari session shows exactly how long it sat there and what (if
+  anything) happened last.
+
+Verified the instrumentation itself fires correctly in headless
+(`appkit:open:call`/`:resolved`, `modal:open` with the new context) —
+confirms the logging works, not the Safari bug itself, which still needs
+a real device capture (item 1 on `docs/WALLET_TEST_CHECKLIST.md`).
+Incidentally, `getUniversalProvider()` did not resolve OR reject within
+~11s in this headless Chrome test environment either — worth knowing
+going in (this call can genuinely be slow, or headless Chrome's own
+networking has some unrelated constraint), but not itself evidence about
+Safari specifically, since headless Chrome and Safari are different
+environments with their own possible causes for the same symptom.
+
+---
+
 ## Uncaught ReferenceError on WebKit: "Can't find variable: extractInfo"
 
 Captured via the same Zerion mobile `?debug=1` session — an uncaught
