@@ -1027,12 +1027,26 @@
         throw err;
       }
       if (!accounts || !accounts[0]) { const e = new Error('No accounts found'); e.__legacyVaultExpected = true; throw e; }
-      let chainIdHex;
+      let requestChainId;
       try {
-        chainIdHex = await selectedProvider.request({ method: 'eth_chainId' });
+        requestChainId = await selectedProvider.request({ method: 'eth_chainId' });
       } catch {
-        chainIdHex = '0x0';
+        requestChainId = null;
       }
+      // Deliberately never attempts wallet_switchEthereumChain here — that
+      // IS this override's whole point (see class comment). Reports the
+      // wallet's ACTUAL chain, not AppKit's target (params.chainId): the
+      // original method trusts a switch it just performed and reports the
+      // target regardless, but this override never performs that switch,
+      // so claiming the target here would report something never
+      // verified. This app's own ensureChainForAction resolves the real
+      // active chain separately (genesis-checked) — AppKit's belief about
+      // the chain doesn't drive anything else in this app.
+      const actualChainDecimal = requestChainId ? parseInt(requestChainId, 16) : null;
+      const caipNetwork = actualChainDecimal != null
+        ? this.getCaipNetworks().find(n => n.id.toString() === actualChainDecimal.toString())
+        : undefined;
+      const address = this.toChecksummedAddress(accounts[0]);
       try {
         // The actual point of this override: this app's own safe connect
         // path instead of EthersAdapter's switch-or-abort logic above.
@@ -1043,9 +1057,35 @@
         err.__legacyVaultExpected = true;
         throw err;
       }
+      // Replicates EthersAdapter.connect()'s own success side effects —
+      // skipping these was a real bug, found live: this app's own state
+      // updated fine via connectWithAccounts above, but AppKit's modal
+      // stayed in an error/"try again" state despite the connection
+      // actually succeeding. Root cause, traced into
+      // @reown/appkit-controllers@1.8.23's ConnectorControllerUtil.connectExternal():
+      // the modal's own promise resolves (and calls ModalController.close())
+      // by SUBSCRIBING to ChainController's activeCaipAddress state
+      // becoming truthy — NOT from connect()'s return value. That state
+      // only updates as a side effect of the emit('accountChanged', ...)
+      // call below; without it, the modal's success path never fires,
+      // regardless of what connect() itself returns. addConnection() and
+      // listenProviderEvents() are the adapter's own bookkeeping
+      // (disconnect(), future account/chain-change forwarding) — skipping
+      // those is what made reconnect-after-disconnect specifically show
+      // the same symptom, since AppKit never had this connector in its
+      // own connections list to begin with.
+      this.emit('accountChanged', { address, chainId: actualChainDecimal, connector });
+      this.addConnection({
+        connectorId: params.id,
+        accounts: accounts.map(a => ({ address: a })),
+        caipNetwork
+      });
+      if (params.id !== 'walletConnect') {
+        this.listenProviderEvents(params.id, selectedProvider);
+      }
       return {
-        address: accounts[0],
-        chainId: parseInt(chainIdHex, 16) || 0,
+        address,
+        chainId: actualChainDecimal ?? 0,
         provider: selectedProvider,
         type: params.type,
         id: params.id

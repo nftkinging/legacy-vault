@@ -232,6 +232,37 @@ fallback path doesn't itself throw a syntax error and that
 verified that the fallback actually engages against a genuinely broken
 future version, since that requires a version this app isn't pinned to.
 
+**Fixed bug, found live: connection succeeded but AppKit's modal showed
+an error/"try again" anyway** — reproduced identically on desktop,
+mobile, and MetaMask's in-app browser, most visibly on reconnect after a
+disconnect. Root cause traced into `@reown/appkit-controllers@1.8.23`'s
+`ConnectorControllerUtil.connectExternal()`
+(`unpkg.com/@reown/appkit-controllers@1.8.23/dist/esm/src/utils/ConnectorControllerUtil.js`):
+the modal's own promise resolves — and calls `ModalController.close()` —
+by **subscribing to `ChainController`'s `activeCaipAddress` state
+becoming truthy**, not from `connect()`'s return value. The first version
+of `SafeInjectedEthersAdapter.connect()` only returned a value; it never
+called the side effects the original `EthersAdapter.connect()` calls on
+success — `this.emit('accountChanged', ...)` (what actually updates that
+state), `this.addConnection(...)` (the adapter's own connections
+bookkeeping, which is why disconnect→reconnect specifically surfaced it:
+AppKit never had the connector registered as connected in the first
+place), and `this.listenProviderEvents(...)` (future account/chain-change
+forwarding). This app's own state updated fine regardless (via
+`connectWithAccounts`, independent of AppKit's bookkeeping), which is why
+the app itself worked while AppKit's modal did not.
+
+Fixed by replicating those three calls, using the wallet's actual
+reported chain (not AppKit's target `chainId` param) for the emitted/
+returned/registered chain — since this override deliberately never
+performs the switch that would make the target trustworthy. Verified via
+the same exposed-class unit-test approach: `emit`/`addConnection`/
+`listenProviderEvents` all fire on both first connect and reconnect-
+after-disconnect, checksummed address returned, `adapter.connections`
+correctly empties on disconnect and repopulates on reconnect — confirmed
+across repeated runs. Still not confirmed against AppKit's real modal UI
+(same headless-rendering limitation noted above) or a real device.
+
 ---
 
 ## Uncaught ReferenceError on WebKit: "Can't find variable: extractInfo"
