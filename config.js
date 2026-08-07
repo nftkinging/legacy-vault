@@ -59,12 +59,20 @@ window.LEGACY_VAULT_CONFIG = {
       genesisHash: "0x395bd3d6583216495648e8322032761c1a377eddf04f59de0c693c7d6682aee6",
       contractAddress: "0xA6D643FbDE7a2fd7D4D7e79075377ADd022F40b7",
       // 968 is registered to an unrelated project (Datagram/DGRAM) in public
-      // chain-list registries — a wallet resolving wallet_addEthereumChain
-      // against that registry can show "Datagram" as the network name
-      // before the user approves. Empty string (see mainnet below) hides
-      // this warning entirely — 677 is correctly registered to BOT Chain,
-      // per docs/LegacyVault_Mainnet_Plan.md Batch 5 item 7.
+      // chain-list registries. Confirmed on-device (Zerion mobile,
+      // 2026-08-07): a wallet that already has 968 registered as Datagram
+      // doesn't just mislabel it during add — wallet_switchEthereumChain
+      // actually succeeds onto Datagram's own RPC, silently, while still
+      // reporting chainId 0x3c8. tryResolveChain's genesis check is what
+      // catches this (see verifyGenuineBotChain); app.html's
+      // registryCollision handling in ensureChainForAction uses this exact
+      // field's presence to detect it and registryCollisionNetworkName
+      // below to name it correctly, rather than hardcoding "Datagram" in
+      // two places. Empty string (see mainnet below) hides this warning
+      // entirely — 677 is correctly registered to BOT Chain, per
+      // docs/LegacyVault_Mainnet_Plan.md Batch 5 item 7.
       registryCollisionWarning: "Some wallets may show this network as “Datagram” when adding it — that’s a public registry mix-up for chain 968, not a wrong network. Just confirm the RPC reads rpc.bohr.life before approving.",
+      registryCollisionNetworkName: "Datagram",
       // Shown to a beneficiary whose wallet can't cover gas to claim —
       // exactly the common case for a non-technical heir who's never
       // touched this wallet before. No mainnet equivalent: there is no
@@ -83,6 +91,7 @@ window.LEGACY_VAULT_CONFIG = {
       genesisHash: "0x161a4ff8b4c95e95b314899c4ea8f9782c4ae8851362ffe0d47c0b8a05f7b784",
       contractAddress: null,
       registryCollisionWarning: "",
+      registryCollisionNetworkName: "",
       faucetUrl: ""
     }
   }

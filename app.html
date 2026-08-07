@@ -1910,7 +1910,7 @@
       await currentEth.request({ method: 'wallet_addEthereumChain', params: [NETWORK_PARAMS] });
       window.__wcLog && window.__wcLog('addChainBtn:wallet_addEthereumChain:ok');
       const resolved = await tryResolveChain(currentEth);
-      if (!resolved) {
+      if (!resolved || resolved.registryCollision) {
         const err = new Error('Still not on the expected network.');
         err.chainOnboardingFailed = true;
         err.chainOnboardingReason = 'still on a different network after adding';
@@ -2122,7 +2122,15 @@
   // Pure read: reports whether eth is currently on a network we recognize
   // AND trust (genesis-verified) AND have a contract deployed on. Never
   // prompts, never switches, never throws for a mismatch — just answers
-  // the question. Returns { netKey, netEntry } or null.
+  // the question. Returns { netKey, netEntry } on success, null when the
+  // chain is something else entirely, or { registryCollision: true,
+  // netEntry } for the specific, confirmed-on-device shape: chainId
+  // matched a network we know AND that network has a documented registry
+  // collision (registryCollisionWarning), but the actual chain behind it
+  // fails genesis verification — the wallet already has that chain ID
+  // registered to someone else (e.g. Zerion + chain 968 + Datagram) and
+  // silently switched there instead. Callers must check for this shape
+  // before treating a falsy-but-object-shaped result as resolved.
   async function tryResolveChain(eth) {
     const chainIdHex = await eth.request({ method: 'eth_chainId' });
     const match = findNetworkForChainId(chainIdHex);
@@ -2133,6 +2141,9 @@
       await verifyGenuineBotChain(eth, match[1]);
     } catch (err) {
       window.__wcLog && window.__wcLog('tryResolveChain:genesis-mismatch', plainifyError(err));
+      if (match[1].registryCollisionWarning) {
+        return { registryCollision: true, netEntry: match[1] };
+      }
       return null;
     }
     return { netKey: match[0], netEntry: match[1] };
@@ -2171,12 +2182,16 @@
     readContract = undefined; // stale from any previous session/network
 
     const resolved = await tryResolveChain(eth);
-    if (resolved) {
+    if (resolved && resolved.netKey) {
       applyResolvedNetwork(resolved.netKey, resolved.netEntry);
       contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
       console.log('[LegacyVault] applied network:', resolved.netKey, '— CONTRACT_ADDRESS is now', CONTRACT_ADDRESS);
       window.__wcLog && window.__wcLog('connectWithEth:applied-network', { netKey: resolved.netKey, contractAddress: CONTRACT_ADDRESS });
     }
+    // A registryCollision result (see tryResolveChain) is deliberately
+    // treated the same as "not resolved" here — connecting never blocks
+    // or shows a message on its own; ensureChainForAction is where this
+    // gets surfaced, at the moment an action actually needs the chain.
     // Not resolved isn't blocking, not even an error — just means action
     // buttons will prompt for the network when pressed (ensureChainForAction)
     // instead of being ready to go immediately. refreshOwnerVault() below
@@ -2209,6 +2224,21 @@
     }
     await ensureWalletHasChain(currentEth);
     const resolved = await tryResolveChain(currentEth);
+    // Confirmed on-device (Zerion mobile): this wallet already has chain
+    // 968 registered to Datagram, so wallet_switchEthereumChain "succeeds"
+    // straight onto Datagram's RPC — there is no add-chain prompt to
+    // retry and no manual entry that would help, since the wallet already
+    // has that chain ID claimed by something else and won't let it be
+    // re-added. Both remedies the generic chainOnboardingFailed path
+    // offers would fail here and waste the user's time, so this gets its
+    // own error shape instead of falling into that one.
+    if (resolved && resolved.registryCollision) {
+      const err = new Error(`This wallet already has chain 968 registered to a different network (${resolved.netEntry.registryCollisionNetworkName || 'another project'}) — ${resolved.netEntry.name} can't be used here.`);
+      err.registryCollisionBlocked = true;
+      err.blockedNetworkName = resolved.netEntry.name;
+      err.collidingNetworkName = resolved.netEntry.registryCollisionNetworkName || 'another project';
+      throw err;
+    }
     if (!resolved) {
       const err = new Error('Wallet did not switch to the expected network.');
       err.chainOnboardingFailed = true;
@@ -2303,6 +2333,19 @@
       // pressing the same action again.
       const targetName = (getBuildTargetNetwork() || {}).name || window.LEGACY_VAULT_CONFIG.NETWORK_NAME;
       showWrongNetworkBanner(`You declined adding ${targetName}. Try that again when you're ready.`);
+      return true;
+    }
+    if (err.registryCollisionBlocked) {
+      // Confirmed on-device, not a guess: this wallet already has chain
+      // 968 claimed by a different network (Datagram) and
+      // wallet_switchEthereumChain silently lands there instead of ours.
+      // Neither remedy the chainOnboardingFailed branch below offers
+      // would help — there's no add-chain prompt to retry (switching
+      // already "succeeded"), and manual entry can't re-add a chain ID
+      // the wallet already has claimed — so this states the real cause
+      // and points at the actual fix (a different wallet) instead of
+      // offering either.
+      showWrongNetworkBanner(`This wallet has chain 968 registered to a different network (${err.collidingNetworkName}), so ${err.blockedNetworkName} can't be used here. Try a wallet that doesn't already have that network saved. This only affects testnet.`);
       return true;
     }
     if (err.chainOnboardingFailed) {

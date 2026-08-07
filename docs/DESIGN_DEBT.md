@@ -107,6 +107,18 @@ describing the actual confirmed mechanism (silent switch to the wrong
 chain) rather than the original, incorrect "may be rejected" guess. Still
 a workaround for a collision we don't control, not a fix for it.
 
+**When the wallet is confirmed already-collided, don't offer either
+remedy — both would fail.** `tryResolveChain` now distinguishes "wrong
+chain entirely" (generic `chainOnboardingFailed`: offer the "Add BOT
+Chain" retry and manual entry — both can genuinely help there) from
+"chainId matched, genesis didn't, and that network has a registered
+collision" (`registryCollisionBlocked`: state the true cause by name,
+suggest trying a different wallet, note this is testnet-only — and show
+neither remedy). There's nothing to add (the switch already "succeeded")
+and no manual entry that helps (the wallet already has that chain ID
+claimed by Datagram and won't let it be re-added), so offering either
+would just waste the user's time on something already known to fail.
+
 **TESTNET ONLY.** Chain 677 (mainnet) is correctly registered to "BOT
 Chain Mainnet" in the same registry, with matching name, currency, and
 explorer (`scan.botchain.ai`) — this should not recur there. Still,
