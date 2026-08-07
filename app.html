@@ -594,10 +594,11 @@
       <input id="benInput" placeholder="0x..." autocomplete="off" />
       <div class="field-error-text" id="benError" hidden></div>
       <div class="beneficiary-status" id="beneficiaryStatus" hidden></div>
+      <div class="field-hint">This address, the amount below, and the vault's timing are public on-chain — only the letter itself is encrypted.</div>
 
       <label for="amtInput">BOT to lock away</label>
       <input id="amtInput" type="number" min="0" step="0.001" placeholder="0.1" />
-      <div class="field-hint" id="amtHint">Minimum 0.1 BOT.</div>
+      <div class="field-hint" id="amtHint">Minimum 0.1 BOT — stays locked while the vault is active; close the vault to reclaim it.</div>
       <div class="field-error-text" id="amtError" hidden></div>
 
       <label>Silence allowed before it unlocks</label>
@@ -753,6 +754,7 @@
             <div class="count-label" id="claimCountLabel" aria-live="polite">until the seal may be broken</div>
           </div>
         </div>
+        <p class="field-hint" style="text-align:center;">The owner can still check in right up until you claim, which resets this — reaching zero doesn't guarantee the vault is claimable that instant.</p>
 
         <ul class="facts">
           <li><span class="k">Left behind</span><span class="v" id="cBalance">—</span></li>
@@ -1613,7 +1615,7 @@
     const minDepositStr = ethers.formatEther(constraints.minDeposit);
     $('amtInput').min = minDepositStr;
     $('amtInput').placeholder = minDepositStr;
-    $('amtHint').textContent = `Minimum ${minDepositStr} BOT.`;
+    $('amtHint').textContent = `Minimum ${minDepositStr} BOT — stays locked while the vault is active; close the vault to reclaim it.`;
     $('withdrawHint').textContent = `A live vault can't drop below the ${minDepositStr} BOT minimum — use Close vault to take everything out.`;
     updateMsgCounter();
   }
