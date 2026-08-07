@@ -37,14 +37,15 @@
     display: grid; justify-items: end; align-items: center;
     min-width: 116px; min-height: 40px;
   }
-  /* connectBtn and the connected-state pill share one grid cell (stacked,
-     not side by side) so swapping between them at connect/disconnect is a
-     pure visibility toggle, never a resize. */
+  /* connectPlaceholder, connectBtn, and the connected-state pill all share
+     one grid cell (stacked, not side by side) so swapping between them at
+     connect/disconnect is a pure visibility toggle, never a resize. */
   .wallet-compact > * { grid-area: 1 / 1; }
-  /* One button, always clickable, regardless of wallet/device — it never
-     waits on AppKit's module load, so there's no placeholder/skeleton
-     state to cross-fade out of. Click handling branches internally
-     (injected wallet vs AppKit's modal); the user only ever sees this. */
+  /* One button, always clickable once the header has resolved a real
+     state — it never waits on AppKit's module load, only (briefly) on
+     eth_accounts for an injected wallet, covered by connectPlaceholder
+     below. Click handling branches internally (injected wallet vs
+     AppKit's modal); the user only ever sees this. */
   #connectBtn {
     width: 116px; height: 40px;
     display: inline-flex; align-items: center; justify-content: center;
@@ -54,6 +55,27 @@
     text-transform: none;
   }
   #connectBtn:hover { background: var(--wax-deep); }
+
+  /* Neutral third state between page load and eth_accounts resolving —
+     same size/shape as connectBtn so nothing shifts when it resolves,
+     but deliberately says nothing: no text, no spinner, just a quiet
+     shimmer so it doesn't read as inert/broken while it waits. */
+  .wallet-placeholder {
+    width: 116px; height: 40px;
+    border-radius: 2px; background: var(--wax);
+    position: relative; overflow: hidden;
+  }
+  .wallet-placeholder[hidden] { display: none; }
+  .wallet-placeholder::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+    transform: translateX(-100%);
+    animation: wallet-placeholder-shimmer 1.6s ease-in-out infinite;
+  }
+  @keyframes wallet-placeholder-shimmer { 100% { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .wallet-placeholder::after { animation: none; content: none; }
+  }
 
   .direct-connect-pill {
     display: inline-flex; align-items: center; gap: var(--space-3);
@@ -465,6 +487,12 @@
            running). With no injected wallet, it opens AppKit's own modal
            (WalletConnect + wallet list) instead. The user never sees which
            path ran. -->
+      <!-- Shown only while restoring a possibly-already-authorized injected
+           wallet on load (eth_accounts hasn't resolved yet) — a neutral
+           placeholder, not a guess at either end state, so the header
+           never flashes "Connect Wallet" for a session that's about to
+           turn out to already be connected. See setHeaderState() below. -->
+      <div class="wallet-placeholder" id="connectPlaceholder" hidden aria-hidden="true"></div>
       <button type="button" id="connectBtn">Connect Wallet</button>
       <appkit-button style="display:none"></appkit-button>
       <!-- Connected-state UI for both paths above (connectDirect() or an
@@ -1221,6 +1249,16 @@
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
   let usingDirectConnect = false; // true when connected via connectDirect() rather than AppKit
+  // True for the ENTIRE window a direct-connect attempt is being resolved
+  // — from the first RPC call (eth_accounts or eth_requestAccounts) through
+  // connectWithEth() finishing, success or failure. usingDirectConnect only
+  // flips true once that's already succeeded, which left a real gap: found
+  // by reproducing eth_accounts itself taking a couple of seconds (a real
+  // RPC delay, not contrived) — AppKit's own module load + ready event can
+  // land inside THAT window too, while usingDirectConnect is still false
+  // because there's no session to claim yet. __onAppKitAccount needs to
+  // defer for the whole attempt, not just the part after it's already won.
+  let directConnectResolving = false;
   // The raw EIP-1193 provider backing the current session (window.ethereum
   // or AppKit's) — stored so ensureChainForAction() and the addChainBtn
   // handler can reach it later, at the moment a transaction is attempted,
@@ -1893,26 +1931,40 @@
     refreshOwnerVault(); // myAddress is now undefined too; falls back to the empty "create" view
   }
 
+  // Three states, not two. "unknown" exists only for the brief window on
+  // load where an injected wallet is present but eth_accounts hasn't
+  // resolved yet — whether we're about to be connected or not is
+  // genuinely undetermined, and guessing "disconnected" in the meantime
+  // is what caused the Connect-Wallet-then-flip flicker (network timing
+  // decided which state briefly showed, so it was inconsistent run to
+  // run). connectPlaceholder is sized identically to connectBtn so
+  // resolving out of "unknown" is a pure visibility swap, never a shift.
+  let headerUnknownTimer = null;
+  function setHeaderState(state) {
+    window.__wcLog && window.__wcLog('setHeaderState', { state, at: shortStack() });
+    $('connectPlaceholder').hidden = state !== 'unknown';
+    $('connectBtn').style.display = state === 'disconnected' ? '' : 'none';
+    $('directConnectPill').hidden = state !== 'connected';
+    if (state !== 'unknown' && headerUnknownTimer) { clearTimeout(headerUnknownTimer); headerUnknownTimer = null; }
+  }
+
   // The single source of truth for the header's connect UI — the only
-  // function anywhere that touches connectBtn's display or
-  // directConnectPill's hidden state. Every place that changes the
-  // connection (clearConnectionState, connectWithAccounts,
-  // __onAppKitAccount, the chainChanged/accountsChanged listeners) ends
-  // by calling this rather than touching either element itself, so the
-  // header can never drift from what those two elements' toggles say vs.
-  // what's actually true — it's derived fresh from myAddress every time,
-  // never incrementally patched.
+  // function anywhere that decides connected vs. disconnected (setHeaderState
+  // is the only thing that then touches the actual elements). Every place
+  // that changes the connection (clearConnectionState, connectWithAccounts,
+  // __onAppKitAccount, the chainChanged/accountsChanged listeners) ends by
+  // calling this rather than touching an element itself, so the header can
+  // never drift from what's actually true — it's derived fresh from
+  // myAddress every time, never incrementally patched. Never resolves back
+  // to "unknown" — only the load-time bootstrap below does that.
   function renderHeaderConnectionState() {
     window.__wcLog && window.__wcLog('renderHeaderConnectionState', { myAddress, usingDirectConnect, at: shortStack() });
-    const pill = $('directConnectPill');
     if (myAddress) {
-      pill.hidden = false;
+      setHeaderState('connected');
       $('directConnectAddr').textContent = short(myAddress);
-      $('connectBtn').style.display = 'none';
       refreshDirectConnectBalance(); // fire-and-forget; own errors are caught internally
     } else {
-      pill.hidden = true;
-      $('connectBtn').style.display = '';
+      setHeaderState('disconnected');
     }
   }
 
@@ -2046,11 +2098,20 @@
   // re-encrypt handler) — wallets are far more willing to add a network
   // when a real transaction needs it, and someone just looking around
   // never has to see any of this at all.
-  async function connectWithEth(eth) {
-    window.__wcLog && window.__wcLog('connectWithEth:start');
+  // knownAddress is optional — pass it whenever the caller already has an
+  // authorized address in hand (from its own eth_accounts/eth_requestAccounts
+  // call, or AppKit's account object) to skip provider.getSigner()'s own
+  // internal eth_accounts round trip. Found by reproducing a slow
+  // eth_accounts RPC: getSigner() with no address re-derives the account
+  // via ANOTHER eth_accounts call, so a slow wallet paid that latency
+  // twice — enough, composed with connectWithEth's other round trips, to
+  // occasionally miss the header's 3s "unknown" backstop even though the
+  // wallet was genuinely about to authorize us, just slowly.
+  async function connectWithEth(eth, knownAddress) {
+    window.__wcLog && window.__wcLog('connectWithEth:start', { knownAddress: !!knownAddress });
     currentEth = eth;
     provider = new ethers.BrowserProvider(eth);
-    signer = await provider.getSigner();
+    signer = knownAddress ? new ethers.JsonRpcSigner(provider, ethers.getAddress(knownAddress)) : await provider.getSigner();
     myAddress = await signer.getAddress();
     contract = undefined; // rebuilt below only if the wallet is already on the right chain
     readContract = undefined; // stale from any previous session/network
@@ -2245,15 +2306,15 @@
   // — which is what makes "stay connected across reload" and "restore after
   // returning from a mobile wallet app" work with no extra code here.
   window.__onAppKitAccount = async (account) => {
-    window.__wcLog && window.__wcLog('account', { isConnected: account?.isConnected, address: account?.address, usingDirectConnect });
+    window.__wcLog && window.__wcLog('account', { isConnected: account?.isConnected, address: account?.address, usingDirectConnect, directConnectResolving });
 
     // AppKit's module loads async and reports its own restored state
-    // (or lack of one) whenever it's ready — which can land well after a
-    // direct-connect session (via eth_accounts auto-reconnect, or a
-    // manual click) has already been established. AppKit reporting
-    // "not connected" is only true of AppKit's own connection; it must
-    // never tear down a session it didn't create.
-    if (usingDirectConnect) return;
+    // (or lack of one) whenever it's ready — which can land during, or
+    // well after, a direct-connect attempt (eth_accounts auto-reconnect,
+    // or a manual click). AppKit reporting "not connected" is only true
+    // of AppKit's own connection; it must never tear down a session it
+    // didn't create, NOR jump in while one is still being resolved.
+    if (usingDirectConnect || directConnectResolving) return;
 
     hideWrongNetworkBanner();
 
@@ -2279,7 +2340,7 @@
       const eth = (typeof window.ethereum !== 'undefined') ? window.ethereum : appKitEth;
       if (!eth) throw new Error('Wallet provider not ready yet.');
 
-      const netKey = await connectWithEth(eth);
+      const netKey = await connectWithEth(eth, account.address);
       renderHeaderConnectionState();
       window.__wcLog && window.__wcLog('account:ready', { address: myAddress, network: netKey });
     } catch (err) {
@@ -2309,7 +2370,7 @@
     if (!accounts || !accounts[0]) throw new Error('No account returned by wallet.');
     usingDirectConnect = true;
     try {
-      const netKey = await connectWithEth(window.ethereum);
+      const netKey = await connectWithEth(window.ethereum, accounts[0]);
       renderHeaderConnectionState();
       window.__wcLog && window.__wcLog('account:ready (' + source + ')', { address: myAddress, network: netKey });
     } catch (err) {
@@ -2337,6 +2398,7 @@
       return;
     }
     hideWrongNetworkBanner();
+    directConnectResolving = true;
     try {
       window.__wcLog && window.__wcLog('eth_requestAccounts:call');
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -2345,6 +2407,8 @@
     } catch (err) {
       window.__wcLog && window.__wcLog('connectDirect:error', plainifyError(err));
       handleConnectError(err);
+    } finally {
+      directConnectResolving = false;
     }
   }
   $('directConnectBtn').addEventListener('click', connectDirect);
@@ -2359,18 +2423,35 @@
   // soon as it's subscribed (see the module script above) — this only
   // covers the direct-connect path, which has no persistence of its own.
   async function tryAutoReconnect() {
-    if (typeof window.ethereum === 'undefined') return;
+    if (typeof window.ethereum === 'undefined') return; // setHeaderState('disconnected') already ran for this case
+    // Set for the whole attempt, starting before eth_accounts is even
+    // called — found by reproducing eth_accounts itself taking a couple
+    // of seconds (a real RPC delay): AppKit's module can finish loading
+    // and fire its own "not connected" restore signal inside that window,
+    // while usingDirectConnect is still false because there's no session
+    // yet to claim. See directConnectResolving's own comment.
+    directConnectResolving = true;
     try {
       window.__wcLog && window.__wcLog('eth_accounts:call');
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       window.__wcLog && window.__wcLog('eth_accounts:ok', { accounts });
-      if (!accounts || !accounts[0]) return;
+      // Resolves the header out of "unknown" the moment the real answer is
+      // known, rather than leaving it to the 3s backstop timeout — that
+      // timeout exists for a hung RPC, not for an empty (valid, fast)
+      // response like this one.
+      if (!accounts || !accounts[0]) { setHeaderState('disconnected'); return; }
       await connectWithAccounts(accounts, 'auto-reconnect');
     } catch (err) {
       // Silent by design — this is a background convenience running
       // before the user has done anything, not a response to an action,
-      // so it never surfaces an error. connectBtn is still right there.
+      // so it never surfaces an error. connectBtn is still right there,
+      // and the header still needs to resolve out of "unknown" now that
+      // the answer (however unwelcome) is in — no reason to wait out the
+      // full 3s backstop for an error that already happened.
       window.__wcLog && window.__wcLog('tryAutoReconnect:error', plainifyError(err));
+      setHeaderState('disconnected');
+    } finally {
+      directConnectResolving = false;
     }
   }
   // There's no universal EIP-1193 "revoke" call an injected provider is
@@ -2421,6 +2502,25 @@
     // logged AND re-thrown so it isn't hidden from the console too.
     window.__recordEarly('connect-ui:setup-error', { message: err.message, stack: err.stack });
     throw err;
+  }
+
+  // Bootstrap the header's initial state. An injected wallet might
+  // already authorize this site (eth_accounts, about to run inside
+  // tryAutoReconnect) or might not — genuinely unknown until that
+  // resolves, so "unknown" is what renders, not a guess at either end.
+  // No injected wallet means there's nothing of this kind to restore —
+  // go straight to disconnected. The timeout is a backstop for a hung
+  // RPC, not the expected path: setHeaderState('unknown') clears it the
+  // moment renderHeaderConnectionState() (called from tryAutoReconnect
+  // either way, connected or not) resolves the real state.
+  if (typeof window.ethereum !== 'undefined') {
+    setHeaderState('unknown');
+    headerUnknownTimer = setTimeout(() => {
+      window.__wcLog && window.__wcLog('setHeaderState:unknown-timeout', {});
+      setHeaderState('disconnected');
+    }, 3000);
+  } else {
+    setHeaderState('disconnected');
   }
   tryAutoReconnect();
 
