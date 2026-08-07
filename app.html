@@ -534,9 +534,12 @@
     <button id="addChainBtn" type="button" class="wrong-network-switch" hidden>Add BOT Chain</button>
   </div>
 
-  <!-- Only revealed once addChainBtn's own retry has also failed — see
-       handleConnectError. A single small link, not a button, since this
-       is explicitly the secondary path. -->
+  <!-- Revealed on any add-chain failure (handleChainOnboardingError), and
+       proactively on mobile before the automatic attempt even runs (see
+       ensureWalletHasChain — IS_MOBILE_UA) since that's the case the
+       registry collision is suspected to actually block, not just
+       mislabel. A single small link, not a button, since it's still the
+       secondary path everywhere else. -->
   <p id="manualNetworkToggleRow" hidden style="text-align:center; margin: var(--space-2) 0 var(--space-4);">
     <button type="button" id="manualNetworkToggle" class="debug-log-toggle">Enter the network details manually instead</button>
   </p>
@@ -1062,6 +1065,12 @@
   // ---- CONFIG: shared with index.html via config.js ----
   let CONTRACT_ADDRESS = window.LEGACY_VAULT_CONFIG.CONTRACT_ADDRESS;
   const NETWORK_PARAMS = window.LEGACY_VAULT_CONFIG.NETWORK_PARAMS;
+  // Used to surface the manual network-entry fallback proactively rather
+  // than only after wallet_addEthereumChain has already failed once — see
+  // ensureWalletHasChain's own comment on why mobile specifically gets
+  // this earlier. A plain UA sniff, not a capability check: there's no
+  // feature to detect here, just "which device is this."
+  const IS_MOBILE_UA = /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
 
   // Stable reference to this build's actual target network (testnet here,
   // mainnet in a mainnet build). NETWORK_PARAMS above is captured once and
@@ -2030,11 +2039,38 @@
   // notice (config.NETWORKS[...].registryCollisionWarning) before either
   // prompt fires, not after, since the wallet's own popup can otherwise
   // cover this page entirely.
+  //
+  // On mobile specifically, the manual-entry fallback is surfaced right
+  // here too — before wallet_addEthereumChain has even run, not only
+  // after it fails. This is a workaround for a registry collision we
+  // don't control (chain 968 is registered to a different, unrelated
+  // project — Datagram — in ethereum-lists/chains, with a different
+  // name/symbol/RPC than ours), not a fix for it: we can't change what's
+  // in that registry or how a given wallet validates against it. Desktop
+  // MetaMask has been reliable adding it automatically in testing; mobile
+  // wallets validating more strictly against the same registry data is
+  // the suspected (not yet on-device confirmed) reason mobile has been
+  // less reliable. The automatic attempt still runs either way — this
+  // just stops making a mobile user wait through a prompt likely to fail
+  // before they see the option that's more likely to actually work.
   async function ensureWalletHasChain(eth) {
-    window.__wcLog && window.__wcLog('ensureWalletHasChain:start');
+    window.__wcLog && window.__wcLog('ensureWalletHasChain:start', { isMobileUA: IS_MOBILE_UA });
     const target = getBuildTargetNetwork();
     if (target && target.registryCollisionWarning) {
-      showWrongNetworkBanner(`Adding ${target.name} to your wallet — ${target.registryCollisionWarning}`);
+      const message = IS_MOBILE_UA
+        // Honest about what this is (a workaround for a registry
+        // collision, not a fix for it) and about what's actually
+        // confirmed: the collision itself is real (checked directly
+        // against ethereum-lists/chains); mobile wallets rejecting the
+        // automatic add because of it is the suspected cause of reports
+        // seen so far, not something confirmed device-by-device.
+        ? `Adding ${target.name} to your wallet — ${target.registryCollisionWarning} On some mobile wallets this automatic step can fail outright rather than just show the wrong name. If it does, use "Enter the network details manually" below instead of retrying — that skips the registry check entirely.`
+        : `Adding ${target.name} to your wallet — ${target.registryCollisionWarning}`;
+      showWrongNetworkBanner(message);
+      if (IS_MOBILE_UA) {
+        $('manualNetworkToggleRow').hidden = false;
+        window.__wcLog && window.__wcLog('ensureWalletHasChain:manual-fallback-surfaced-proactively');
+      }
     }
     window.__wcLog && window.__wcLog('wallet_switchEthereumChain:call', { chainId: NETWORK_PARAMS.chainId });
     try {

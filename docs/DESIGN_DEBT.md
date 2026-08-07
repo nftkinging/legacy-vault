@@ -63,3 +63,39 @@ Two follow-ups to note:
 2. Check whether mainnet (chain 677) has the same quirk BEFORE deploying.
    If it does, the same override is needed. If mainnet genuinely supports
    EIP-1559, forcing legacy gas could overpay or fail.
+
+---
+
+## Chain quirk — chain 968 registry collision with Datagram (testnet only)
+
+Confirmed directly against ethereum-lists/chains (the source chainlist.org
+and most wallets read from): chain ID 968 is registered to a different,
+unrelated project — Datagram (DGRAM) — with a different name, currency
+symbol, and RPC than BOT Chain's. Registry policy doesn't allow
+reassigning a chain ID once claimed, so this collision is permanent for
+testnet; it isn't something we can get fixed upstream.
+
+**Suspected cause of mobile `wallet_addEthereumChain` failures.** Desktop
+MetaMask has been reliable adding the network automatically in testing;
+multiple mobile wallets have not. The working theory is that mobile
+wallets validate `wallet_addEthereumChain`'s params against the registry
+more strictly than desktop does and reject ours as a mismatch — but this
+is **not yet confirmed on-device**. `app.html` now surfaces the manual
+network-entry fallback proactively on mobile (before the automatic
+attempt even runs, not only after it fails) as an honest workaround, with
+copy that says plainly this is a workaround for a collision we don't
+control, not a fix for it. Capturing the actual `wallet_addEthereumChain`
+error code/message on a real phone via `?debug=1` is still the open item
+that would confirm or rule out the hypothesis.
+
+**TESTNET ONLY.** Chain 677 (mainnet) is correctly registered to "BOT
+Chain Mainnet" in the same registry, with matching name, currency, and
+explorer (`scan.botchain.ai`) — this should not recur there. Still,
+re-verify add-chain on a real phone against mainnet before launch rather
+than assuming a clean registry entry guarantees every wallet's add-chain
+flow behaves.
+
+Datagram's registered entry also advertises EIP1559 support, which may
+compound the separate `baseFeePerGas` quirk above — a wallet consulting
+the registry for chain 968 has a second, independent reason to assume
+EIP-1559 behavior that BOT Chain testnet doesn't actually have.
