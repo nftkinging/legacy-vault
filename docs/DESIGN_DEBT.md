@@ -143,40 +143,82 @@ found, the app bypassed AppKit's `connect()` for every injected-wallet
 session (`connectDirect()`, called directly from `connectBtn`), so
 AppKit had no legitimate reason to be reconnecting to the same provider
 at all; it auto-detects an injected wallet via EIP-6963 and manages it
-independently regardless of whether the app ever calls into it.
+independently regardless of whether the app ever calls into it. Checked
+this SDK version's `AppKitOptions`/`Features` types for a flag to disable
+AppKit's own injected/EIP-6963 detection outright — none exists.
 
-Checked this SDK version's `AppKitOptions`/`Features` types for a flag to
-disable AppKit's own injected/EIP-6963 detection outright — none exists.
-Mitigated reactively: `app.html`'s `subscribeEvents` handler calls
-`appKit.disconnect()` whenever it sees `CONNECT_SUCCESS` while
-`usingDirectConnect` is true — i.e. a direct-connect session (established
-outside AppKit's own modal, via `tryAutoReconnect`'s raw `eth_accounts`
-call) already owns the connection, so a CONNECT_SUCCESS at that point can
-only be AppKit reconnecting to something on its own.
+**History of this mitigation, kept because each step is a real lesson:**
 
-**This got more complicated after `connectBtn` was changed to always open
-AppKit's modal** (see the `SafeInjectedEthersAdapter` entry below) — a
-browser wallet picked FROM that modal now also flows through
-`connectWithAccounts` and sets `usingDirectConnect = true`, which would
-make the guard above disconnect the very session it just legitimately
-established. Fixed with a second flag, `injectedViaAppKit`, set true only
-for that case; the guard now reads `usingDirectConnect && !injectedViaAppKit`.
-Traced through by hand (not device-verified) that the ordering is correct:
-`SafeInjectedEthersAdapter`'s override sets both flags synchronously
-before returning to AppKit's controllers, which is what actually triggers
-`CONNECT_SUCCESS` — so by the time the guard runs, `injectedViaAppKit` is
-already `true` for that connection specifically.
+1. First attempt: `subscribeEvents` called `appKit.disconnect()` whenever
+   it saw `CONNECT_SUCCESS` while `usingDirectConnect` was true (a
+   `tryAutoReconnect`-established session already owning the connection).
+2. After `connectBtn` was changed to always open AppKit's modal (see the
+   `SafeInjectedEthersAdapter` entry below), a browser wallet picked from
+   that modal ALSO started setting `usingDirectConnect = true` — which
+   would make step 1's guard disconnect the very session the user just
+   made. Added `injectedViaAppKit`, true only for that case; guard became
+   `usingDirectConnect && !injectedViaAppKit`.
+3. **Found live, and this is the one that actually mattered: calling
+   `appKit.disconnect()` at all was unsafe.** `EthersAdapter.disconnect()`
+   for an `ANNOUNCED`/`EXTERNAL` connector calls
+   `revokeProviderPermissions()` underneath — i.e. `wallet_revokePermissions`
+   — confirmed directly in `@reown/appkit-adapter-ethers@1.8.23`'s source.
+   A false positive on this guard doesn't just glitch the UI, it can
+   **actually revoke the wallet's site permission**. This turned out to be
+   exactly what "session doesn't survive reload" was: not a display bug,
+   a real, persisted permission revocation from an earlier false-positive
+   disconnect — reproducing worse on mobile because that's where AppKit's
+   own reconnect fires most often (more chances for the guard to
+   misfire). **The `appKit.disconnect()` call was removed from this guard
+   entirely** — it now only logs `CONNECT_SUCCESS` events for future
+   diagnosis. The original problem (visible reconnect churn, a plausible
+   WebKit-crash trigger, see below) is still guarded against separately
+   and safely: every path that establishes this app's own connection
+   state sets `usingDirectConnect` before awaiting anything, and
+   `__onAppKitAccount`'s own early-return guard
+   (`usingDirectConnect || directConnectResolving`) already prevents a
+   redundant AppKit reconnect from corrupting app state — it just no
+   longer also reaches for AppKit's real `disconnect()`.
 
-**Still not device-verified.** Could not reproduce the actual
-auto-reconnect trigger in headless Chrome — a synthetic EIP-6963
-announcement wasn't enough to make AppKit attempt its own connect without
-a real prior session for it to restore, so neither the original
-disconnect call nor the `injectedViaAppKit` refinement has been confirmed
-against a live loop. Needs re-testing against a real device (Zerion or
-another wallet that previously exhibited this) — specifically: (1) that
-the loop still gets disconnected when a `tryAutoReconnect`-established
-session should own things, and (2) that connecting a browser wallet
-through AppKit's modal is no longer immediately torn down.
+**Same investigation also found the actual cause of the reload
+regression**, not just the unsafe symptom-mitigation: `__onAppKitAccount`
+— which is how AppKit's own session restore on load gets bridged into
+this app — only ever called `connectWithEth` directly on success, never
+`connectWithAccounts`. So an injected-wallet session restored by AppKit
+itself (not `tryAutoReconnect`'s raw `eth_accounts`) never set
+`usingDirectConnect`/`injectedViaAppKit` at all, leaving a later,
+legitimate `CONNECT_SUCCESS` for that same connector looking exactly like
+an illegitimate competing one to the guard above — which is what made the
+(now-removed) `disconnect()` call fire on an ordinary page-load timing
+race, not just the genuinely-unwanted case. Fixed by having
+`__onAppKitAccount` route an injected-wallet success through
+`connectWithAccounts(..., viaAppKit=true)` — same as
+`SafeInjectedEthersAdapter`'s own interactive connect — while a
+WalletConnect/no-injected-wallet success still calls `connectWithEth`
+directly, since that path has no alternative event source once
+`usingDirectConnect` would gate `__onAppKitAccount` out (there's no
+`window.ethereum` to listen to instead). `tryAutoReconnect` also now
+defers (`if (usingDirectConnect) return;`, checked right after its own
+`eth_accounts` resolves) rather than re-running `connectWithAccounts` on
+top of a session AppKit's own restore already won, which would otherwise
+overwrite `injectedViaAppKit` back to `false`.
+
+Verified in headless, isolated per fix (decoupled from the actual
+race timing, which proved unreliable to reproduce): `__onAppKitAccount`'s
+injected branch sets both flags and connects correctly on its own;
+`tryAutoReconnect` correctly no-ops without touching either flag when
+`usingDirectConnect` is already true; no spurious `disconnect()` calls
+from either path. Full prior regression suite (WalletConnect bypass,
+`SafeInjectedEthersAdapter` flag-setting, `emit`/`addConnection`/
+`listenProviderEvents`, disconnect→reconnect, fail-safe fallback)
+re-ran clean.
+
+**Still not device-verified against the real reconnect loop or the real
+reload-persistence fix** — could not reproduce AppKit's actual
+auto-reconnect trigger or its real session-restore timing in headless
+Chrome (a synthetic EIP-6963 announcement isn't enough without a real
+prior session for AppKit to restore from). Needs a real device
+re-test — this is now item 3 on `docs/WALLET_TEST_CHECKLIST.md`.
 
 Plausible, not confirmed, connection to the WebKit crash below: the loop
 would repeatedly re-enter AppKit's own reconnect-success handling code,
