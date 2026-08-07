@@ -127,7 +127,26 @@
     background: var(--parchment-2); color: var(--ok);
     border: 1px solid var(--ok);
   }
-  .beneficiary-status.is-warning { background: var(--wax-deep); color: var(--parchment-2); }
+  /* Not a warning — a normal hint. No name is required to have registered
+     a key; this is expected the great majority of the time, not something
+     gone wrong, so it reads the same as any other .field-hint rather than
+     the loud wax-deep block this used to be. */
+  .beneficiary-status.is-hint { padding: 0; background: none; color: var(--muted); }
+  .beneficiary-status.is-hint .reg-link-toggle {
+    background: none; border: none; padding: 0; margin-left: var(--space-1);
+    font: inherit; color: var(--wax-deep); text-decoration: underline;
+    text-underline-offset: 2px; cursor: pointer;
+  }
+  .beneficiary-status.is-hint .reg-link-row {
+    display: flex; align-items: center; gap: var(--space-2);
+    margin-top: var(--space-2); flex-wrap: wrap;
+  }
+  .beneficiary-status.is-hint .reg-link-row input {
+    flex: 1; min-width: 160px; background: var(--parchment-3);
+    border: 1px solid var(--rule); color: var(--text);
+    font-family: var(--font-data); font-size: var(--text-xs);
+    padding: var(--space-2) var(--space-3); border-radius: 2px;
+  }
   .beneficiary-status .status-eyebrow {
     display: block; text-transform: uppercase; letter-spacing: 0.14em;
     font-size: 10px; margin-bottom: var(--space-2); opacity: 0.85;
@@ -1433,13 +1452,17 @@
     // ethers reports an empty revert (no Error(string), no Panic) as the literal
     // reason "require(false)" — that's ethers' own placeholder text, not
     // anything LegacyVault.sol actually raises (every require here carries a
-    // message). It means the call reverted with zero return data, which in
-    // practice means the deployed contract has no matching function for what
-    // was called — almost always a stale contract address in the page versus
-    // what's actually deployed (e.g. after a local redeploy without a
-    // refresh), or occasionally an out-of-gas failure.
+    // message). It means the call reverted with zero return data, which can
+    // have several real causes (insufficient balance, a stale contract
+    // address, out-of-gas) — checkSufficientBalance() already rules out the
+    // single most common one (balance) before the wallet is ever asked to
+    // sign, so if this is still reached, that's already been checked and
+    // came back fine. Naming one specific cause as fact here — this used to
+    // confidently blame a stale contract — was wrong often enough to be
+    // actively misleading; state what's known (the chain gave no reason) and
+    // what's worth trying, not a guess dressed up as a diagnosis.
     if (raw === 'require(false)' || /missing revert data|no data present/i.test(raw)) {
-      return `The transaction was rejected on-chain without a reason. This usually means the app is pointed at a stale contract (common right after redeploying${window.LEGACY_VAULT_CONFIG.IS_LOCAL ? ' locally' : ''}) — refresh the page and try again.`;
+      return `The transaction was rejected on-chain without a specific reason. Double-check your BOT balance covers this plus gas${window.LEGACY_VAULT_CONFIG.IS_LOCAL ? '; if it does, this can also happen after a local redeploy — refresh the page' : ''}, then try again.`;
     }
     for (const [re, msg] of rules) if (re.test(raw)) return msg();
     return raw ? `Something went wrong on-chain (${raw}). Please try again.` : 'Something went wrong. Please try again.';
@@ -1573,15 +1596,17 @@
       statusEl.append(eyebrow, body);
     } else {
       $('passphraseGroup').hidden = false;
-      statusEl.className = 'beneficiary-status is-warning';
+      statusEl.className = 'beneficiary-status is-hint';
       statusEl.innerHTML = '';
-      const eyebrow = document.createElement('span');
-      eyebrow.className = 'status-eyebrow';
-      eyebrow.textContent = 'Not registered';
       const body = document.createElement('span');
-      body.textContent = "This address hasn't registered a key. The letter will be locked with the passphrase below instead — you have to get that to them yourself, and if you go silent before they have it, they can still claim the funds but will never read the letter. Sending them the link below first removes that risk entirely.";
+      body.textContent = "This address hasn't registered a key — the letter will use the passphrase below.";
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'reg-link-toggle';
+      toggle.textContent = 'Send them a registration link instead';
       const linkRow = document.createElement('div');
-      linkRow.className = 'link-row';
+      linkRow.className = 'reg-link-row';
+      linkRow.hidden = true;
       const linkInput = document.createElement('input');
       linkInput.type = 'text';
       linkInput.readOnly = true;
@@ -1589,18 +1614,21 @@
       linkInput.setAttribute('aria-label', 'Registration link to send your beneficiary');
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
-      copyBtn.textContent = 'Copy link';
+      copyBtn.className = 'copy-btn';
+      copyBtn.textContent = 'Copy';
       copyBtn.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(linkInput.value);
           copyBtn.textContent = 'Copied';
-          setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 2000);
+          copyBtn.classList.add('copied');
+          setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 2000);
         } catch {
           linkInput.select();
         }
       });
       linkRow.append(linkInput, copyBtn);
-      statusEl.append(eyebrow, body, linkRow);
+      toggle.addEventListener('click', () => { linkRow.hidden = !linkRow.hidden; });
+      statusEl.append(body, toggle, linkRow);
     }
   }
 
@@ -1642,6 +1670,8 @@
       await ensureChainForAction();
       setBusy($('reencryptBtn'), true, 'Encrypting…');
       const reencrypted = await window.BeneficiaryCrypto.encryptFor(plaintext, ownerReencryptTarget.pubKeyRaw, ownerReencryptTarget.version);
+      const sufficient = await checkSufficientBalance(0n, () => contract.updateMessage.estimateGas(reencrypted), $('ownerMsg'));
+      if (!sufficient) return;
       setBusy($('reencryptBtn'), true, 'Confirm in wallet…');
       note($('ownerMsg'), 'Confirm in your wallet…');
       const tx = await contract.updateMessage(reencrypted, await legacyTxOverrides());
@@ -2065,6 +2095,49 @@
     }
   }
 
+  // The single most common reason any of these transactions fail is
+  // simply not having enough BOT to cover them — checked explicitly,
+  // before the wallet is ever asked to sign, rather than found out only
+  // after a rejection whose real cause the wallet (or ethers) may not
+  // even surface clearly. `value` is the BOT this transaction sends (0n
+  // for anything that isn't create/deposit); estimateGasFn estimates gas
+  // for the real call so the number shown is accurate rather than a flat
+  // guess. Returns true (nothing shown) if there's enough, or if the
+  // check itself couldn't run — a failed diagnostic should never block a
+  // transaction that might actually succeed. On insufficient balance,
+  // writes the message into msgEl and returns false so the caller stops
+  // before ever prompting the wallet.
+  async function checkSufficientBalance(value, estimateGasFn, msgEl, isFieldError) {
+    if (!provider || !myAddress) return true; // ensureChainForAction() already covers "not connected"
+    try {
+      const balance = await provider.getBalance(myAddress);
+      let gasCost = null;
+      try {
+        const [gasEstimate, feeData] = await Promise.all([estimateGasFn(), provider.getFeeData()]);
+        const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? ethers.parseUnits('20', 'gwei');
+        gasCost = gasEstimate * gasPrice;
+      } catch (estErr) {
+        // Estimation itself can fail because the balance can't cover it —
+        // this is exactly the case being checked for, not a reason to
+        // skip the check. Falls through to a flat cushion below.
+        window.__wcLog && window.__wcLog('checkSufficientBalance:estimate-failed', plainifyError(estErr));
+      }
+      const needed = value + (gasCost !== null ? gasCost : ethers.parseEther('0.01'));
+      if (balance < needed) {
+        const faucetUrl = getActiveNetworkConfig().faucetUrl;
+        const text = `You need about ${ethers.formatEther(needed)} BOT for this — you have ${ethers.formatEther(balance)}.`;
+        const link = faucetUrl ? ` <a href="${faucetUrl}" target="_blank" rel="noopener">Get testnet BOT from the faucet</a>.` : '';
+        msgEl.innerHTML = text + link;
+        if (isFieldError) msgEl.hidden = false; else msgEl.className = 'msg-line err';
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Could not check balance before transaction:', err);
+      return true;
+    }
+  }
+
   // Shared display logic for the four chain-related error shapes
   // (wrongChainRpc / chainOnboardingDeclined / chainOnboardingFailed /
   // noContractOnNetwork) — used by both a genuine connect failure and, now,
@@ -2421,9 +2494,12 @@
       const encrypted = useRegisteredKey
         ? await window.BeneficiaryCrypto.encryptFor(msg, benRegistration.pubKeyRaw, benRegistration.version)
         : await encryptMessage(msg, pass);
+      const value = ethers.parseEther(amt);
+      const sufficient = await checkSufficientBalance(value, () => contract.createVault.estimateGas(ben, interval, encrypted, { value }), $('createMsg'));
+      if (!sufficient) return;
       setBusy($('createBtn'), true, 'Confirm in wallet…');
       note($('createMsg'), 'Confirm in your wallet…');
-      const tx = await contract.createVault(ben, interval, encrypted, { value: ethers.parseEther(amt), ...(await legacyTxOverrides()) });
+      const tx = await contract.createVault(ben, interval, encrypted, { value, ...(await legacyTxOverrides()) });
       setBusy($('createBtn'), true, 'Sealing on-chain…');
       note($('createMsg'), 'Sealing on-chain…');
       await tx.wait();
@@ -2443,6 +2519,8 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
+      const sufficient = await checkSufficientBalance(0n, () => contract.checkIn.estimateGas(), $('ownerMsg'));
+      if (!sufficient) return;
       const tx = await contract.checkIn(await legacyTxOverrides());
       setBusy($('checkInBtn'), true, 'Recording…');
       await tx.wait();
@@ -2473,7 +2551,10 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.deposit({ value: ethers.parseEther(amt), ...(await legacyTxOverrides()) });
+      const value = ethers.parseEther(amt);
+      const sufficient = await checkSufficientBalance(value, () => contract.deposit.estimateGas({ value }), $('depositError'), true);
+      if (!sufficient) return;
+      const tx = await contract.deposit({ value, ...(await legacyTxOverrides()) });
       setBusy($('depositConfirm'), true, 'Adding…');
       await tx.wait();
       noteTxSuccess($('ownerMsg'), 'Funds added. Timer reset.');
@@ -2496,7 +2577,10 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
-      const tx = await contract.withdraw(ethers.parseEther(amt), await legacyTxOverrides());
+      const withdrawValue = ethers.parseEther(amt);
+      const sufficient = await checkSufficientBalance(0n, () => contract.withdraw.estimateGas(withdrawValue), $('withdrawError'), true);
+      if (!sufficient) return;
+      const tx = await contract.withdraw(withdrawValue, await legacyTxOverrides());
       setBusy($('withdrawConfirm'), true, 'Withdrawing…');
       await tx.wait();
       noteTxSuccess($('ownerMsg'), 'Withdrawn. Timer reset.');
@@ -2519,6 +2603,8 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
+      const sufficient = await checkSufficientBalance(0n, () => contract.updateBeneficiary.estimateGas(addr), $('changeBenError'), true);
+      if (!sufficient) return;
       const tx = await contract.updateBeneficiary(addr, await legacyTxOverrides());
       setBusy($('changeBenConfirm'), true, 'Changing…');
       await tx.wait();
@@ -2551,6 +2637,8 @@
     note($('ownerMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
+      const sufficient = await checkSufficientBalance(0n, () => contract.closeVault.estimateGas(), $('ownerMsg'));
+      if (!sufficient) return;
       const tx = await contract.closeVault(await legacyTxOverrides());
       setBusy($('closeConfirm'), true, 'Closing…');
       await tx.wait();
@@ -2776,6 +2864,8 @@
     note($('claimMsg'), 'Confirm in your wallet…');
     try {
       await ensureChainForAction();
+      const sufficient = await checkSufficientBalance(0n, () => contract.claim.estimateGas(claimTargetOwner), $('claimMsg'));
+      if (!sufficient) return;
       const tx = await contract.claim(claimTargetOwner, await legacyTxOverrides());
       setBusy($('claimBtn'), true, 'Breaking the seal…');
       note($('claimMsg'), 'Breaking the seal…');
