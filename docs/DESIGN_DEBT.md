@@ -138,30 +138,99 @@ EIP-1559 behavior that BOT Chain testnet doesn't actually have.
 Found via the same Zerion mobile `?debug=1` capture as the chain-968
 collision above: `appkit:CONNECT_SUCCESS` (`method:browser,
 reconnect:true`) fired roughly every 10 seconds, 25+ times in one
-session — entirely on Reown AppKit's own initiative, not from anything
-`app.html` calls. This app bypasses AppKit's `connect()` for every
-injected-wallet session (`connectDirect()`, see its own comment on why),
-so AppKit has no legitimate reason to be reconnecting to the same
-provider at all; it appears to auto-detect it via EIP-6963 and manage it
-independently regardless.
+session — entirely on Reown AppKit's own initiative. At the time this was
+found, the app bypassed AppKit's `connect()` for every injected-wallet
+session (`connectDirect()`, called directly from `connectBtn`), so
+AppKit had no legitimate reason to be reconnecting to the same provider
+at all; it auto-detects an injected wallet via EIP-6963 and manages it
+independently regardless of whether the app ever calls into it.
 
 Checked this SDK version's `AppKitOptions`/`Features` types for a flag to
 disable AppKit's own injected/EIP-6963 detection outright — none exists.
-Mitigated reactively instead: `app.html`'s `subscribeEvents` handler now
-calls `appKit.disconnect()` every time it sees `CONNECT_SUCCESS` while an
-injected wallet is present, severing AppKit's connector each time it
-reconnects. Verified the change doesn't break AppKit's own initialization
-(module still loads and `disconnect` is a real callable method), but
-**could not reproduce the actual auto-reconnect trigger in headless
-Chrome** — a synthetic EIP-6963 announcement wasn't enough to make AppKit
-attempt its own connect without a real prior session for it to restore,
-so the disconnect call itself is unverified against a live loop. Needs
-re-testing against a real device (Zerion or another wallet that
-previously exhibited this) to confirm the loop actually stops.
+Mitigated reactively: `app.html`'s `subscribeEvents` handler calls
+`appKit.disconnect()` whenever it sees `CONNECT_SUCCESS` while
+`usingDirectConnect` is true — i.e. a direct-connect session (established
+outside AppKit's own modal, via `tryAutoReconnect`'s raw `eth_accounts`
+call) already owns the connection, so a CONNECT_SUCCESS at that point can
+only be AppKit reconnecting to something on its own.
+
+**This got more complicated after `connectBtn` was changed to always open
+AppKit's modal** (see the `SafeInjectedEthersAdapter` entry below) — a
+browser wallet picked FROM that modal now also flows through
+`connectWithAccounts` and sets `usingDirectConnect = true`, which would
+make the guard above disconnect the very session it just legitimately
+established. Fixed with a second flag, `injectedViaAppKit`, set true only
+for that case; the guard now reads `usingDirectConnect && !injectedViaAppKit`.
+Traced through by hand (not device-verified) that the ordering is correct:
+`SafeInjectedEthersAdapter`'s override sets both flags synchronously
+before returning to AppKit's controllers, which is what actually triggers
+`CONNECT_SUCCESS` — so by the time the guard runs, `injectedViaAppKit` is
+already `true` for that connection specifically.
+
+**Still not device-verified.** Could not reproduce the actual
+auto-reconnect trigger in headless Chrome — a synthetic EIP-6963
+announcement wasn't enough to make AppKit attempt its own connect without
+a real prior session for it to restore, so neither the original
+disconnect call nor the `injectedViaAppKit` refinement has been confirmed
+against a live loop. Needs re-testing against a real device (Zerion or
+another wallet that previously exhibited this) — specifically: (1) that
+the loop still gets disconnected when a `tryAutoReconnect`-established
+session should own things, and (2) that connecting a browser wallet
+through AppKit's modal is no longer immediately torn down.
 
 Plausible, not confirmed, connection to the WebKit crash below: the loop
 would repeatedly re-enter AppKit's own reconnect-success handling code,
 which is where the crash appears to originate.
+
+---
+
+## SafeInjectedEthersAdapter — undocumented override, pinned to 1.8.23
+
+`app.html` subclasses `@reown/appkit-adapter-ethers`'s `EthersAdapter`
+and overrides `connect()` to work around AppKit aborting the whole
+connection when its own network-reconciliation switch fails. Read
+directly from that exact package version's source
+(`unpkg.com/@reown/appkit-adapter-ethers@1.8.23/dist/esm/src/client.js`):
+`EthersAdapter.connect()` calls `wallet_requestAccounts`, then — if the
+wallet's current chain doesn't match whatever chainId AppKit is
+targeting — attempts `wallet_switchEthereumChain` and throws
+`"EthersAdapter:connect - Switch network failed"` if that fails,
+discarding the accounts it already had. No documented option disables
+this.
+
+`connectBtn` was changed to always open AppKit's own modal (previously it
+bypassed straight to an injected wallet via `connectDirect()`, with no
+way to reach WalletConnect/QR when one was installed). `SafeInjectedEthersAdapter`
+intercepts only non-WalletConnect connectors (checked against both the
+connector id `'walletConnect'` and type `'WALLET_CONNECT'`, confirmed
+literal values from `@reown/appkit-common@1.8.23`'s `ConstantsUtil.js`)
+and routes them through this app's own `connectWithAccounts`/
+`connectWithEth` instead of AppKit's switch-or-abort logic. WalletConnect
+picks go through AppKit's real `connect()` untouched.
+
+**Undocumented internal, pinned to 1.8.23 — needs re-verification on any
+version bump.** This isn't a public extension point; it depends on
+`connect()`'s exact parameter shape, `this.connectors`/
+`this.ethersProviders` existing with their current shapes, and the
+literal connector id/type strings above. All three `@reown/appkit*`
+esm.sh imports are exact-pinned with no range for this reason. A passing
+smoke test after a version bump is not enough — the failure this guards
+against only shows up when a wallet's current chain doesn't match
+AppKit's target, which won't happen on every test connect. If Reown ever
+fixes `EthersAdapter` to not abort on a failed switch, this whole class
+(and the plain `new EthersAdapter()` it replaces) can be removed.
+
+Fails safe rather than silently: if the override's assumptions stop
+holding against a future version, it falls back to this app's own
+independent `connectDirect()` — reported to AppKit's modal as a failure,
+but this app's own header still reflects the real, successful connection
+by then, since `connectDirect()` drives its own state independently of
+AppKit's rejection. A degraded connect beats a dead button. Verified this
+fallback path doesn't itself throw a syntax error and that
+`SafeInjectedEthersAdapter` doesn't break AppKit's normal init (confirmed
+`appkit-ready` still fires, `disconnect` is a real method) — **not**
+verified that the fallback actually engages against a genuinely broken
+future version, since that requires a version this app isn't pinned to.
 
 ---
 

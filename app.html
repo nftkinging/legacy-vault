@@ -34,22 +34,18 @@
   .lockup-h .mark { width: 26px; height: 26px; flex-shrink: 0; }
   .lockup-h .word { font-family: var(--font-display); font-weight: 400; font-size: var(--text-lg); letter-spacing: 0.03em; color: var(--text); }
   .wallet-compact {
-    display: flex; flex-direction: column; align-items: flex-end;
-    gap: 4px; min-width: 116px; min-height: 40px;
+    display: grid; justify-items: end; align-items: center;
+    min-width: 116px; min-height: 40px;
   }
   /* connectPlaceholder, connectBtn, and the connected-state pill all share
      one grid cell (stacked, not side by side) so swapping between them at
-     connect/disconnect is a pure visibility toggle, never a resize. Kept
-     in its own inner element rather than on .wallet-compact itself so the
-     "Use a different wallet" link (below) can sit underneath as a second
-     row instead of getting stacked into the same cell. */
-  .wallet-connect-stack { display: grid; justify-items: end; align-items: center; }
-  .wallet-connect-stack > * { grid-area: 1 / 1; }
+     connect/disconnect is a pure visibility toggle, never a resize. */
+  .wallet-compact > * { grid-area: 1 / 1; }
   /* One button, always clickable once the header has resolved a real
      state — it never waits on AppKit's module load, only (briefly) on
      eth_accounts for an injected wallet, covered by connectPlaceholder
-     below. Click handling branches internally (injected wallet vs
-     AppKit's modal); the user only ever sees this. */
+     below. Always opens AppKit's modal — the user never sees which
+     connector they picked branch internally afterward. */
   #connectBtn {
     width: 116px; height: 40px;
     display: inline-flex; align-items: center; justify-content: center;
@@ -108,21 +104,6 @@
     padding: 2px 6px; border-radius: 2px; cursor: pointer;
   }
   .direct-connect-pill button:hover { background: rgba(255,255,255,0.15); }
-
-  /* Quiet on purpose — this is the secondary path (WalletConnect/QR),
-     never competing visually with the primary Connect Wallet button. No
-     background, no border, just underlined text in the muted tone. Only
-     shown pre-connect and only when there's an injected wallet for
-     connectBtn to have bypassed in the first place — with no injected
-     wallet, connectBtn already opens this same modal, so the link would
-     be redundant. */
-  #useAnotherWalletLink[hidden] { display: none; }
-  #useAnotherWalletLink {
-    background: none; border: none; padding: 0; cursor: pointer;
-    font-family: var(--font-data); font-size: 10px; color: var(--muted);
-    text-decoration: underline; text-underline-offset: 2px; text-transform: none;
-  }
-  #useAnotherWalletLink:hover { color: var(--text); }
 
   .local-dev-banner[hidden] { display: none; }
   .local-dev-banner {
@@ -494,46 +475,34 @@
       <span class="word">Legacy Vault</span>
     </a>
     <div class="wallet-compact" id="walletCompact">
-      <!-- One button, everywhere. It never waits on AppKit's module load —
-           always enabled, clickable the instant the page parses. Its click
-           handler (below) branches internally: an injected wallet
-           (extension, or a wallet app's in-app browser) connects directly,
-           bypassing AppKit's own connect() entirely — that path was found
-           to perform its own internal network-reconciliation switch and
-           ABORT THE WHOLE CONNECTION if that fails (confirmed on-device:
-           appkit:CONNECT_ERROR "EthersAdapter:connect - Switch network
-           failed", with our own ensureWalletHasChain() never even
-           running). With no injected wallet, it opens AppKit's own modal
-           (WalletConnect + wallet list) instead. The user never sees which
-           path ran. -->
-      <div class="wallet-connect-stack">
-        <!-- Shown only while restoring a possibly-already-authorized injected
-             wallet on load (eth_accounts hasn't resolved yet) — a neutral
-             placeholder, not a guess at either end state, so the header
-             never flashes "Connect Wallet" for a session that's about to
-             turn out to already be connected. See setHeaderState() below. -->
-        <div class="wallet-placeholder" id="connectPlaceholder" hidden aria-hidden="true"></div>
-        <button type="button" id="connectBtn">Connect Wallet</button>
-        <appkit-button style="display:none"></appkit-button>
-        <!-- Connected-state UI for both paths above (connectDirect() or an
-             AppKit/WalletConnect session) — neither shows appkit-button's own
-             connected UI, so this stands in for both, never alongside it. -->
-        <div class="direct-connect-pill" id="directConnectPill" hidden>
-          <div class="direct-connect-info">
-            <span id="directConnectBalance" class="direct-connect-balance"></span>
-            <span id="directConnectAddr" class="direct-connect-addr"></span>
-          </div>
-          <button type="button" id="directDisconnectBtn">Disconnect</button>
+      <!-- One button, everywhere, always opening AppKit's own modal
+           (wallet list + WalletConnect QR) — no branching on
+           window.ethereum here at all. Picking a browser/injected wallet
+           from that modal is intercepted by SafeInjectedEthersAdapter
+           (see the module script below) so it still runs through this
+           app's own safe connect path instead of AppKit's adapter, which
+           aborts the whole connection if its own network-reconciliation
+           switch fails (confirmed on-device: appkit:CONNECT_ERROR
+           "EthersAdapter:connect - Switch network failed"). Picking
+           WalletConnect/QR goes through AppKit entirely untouched. -->
+      <!-- Shown only while restoring a possibly-already-authorized injected
+           wallet on load (eth_accounts hasn't resolved yet) — a neutral
+           placeholder, not a guess at either end state, so the header
+           never flashes "Connect Wallet" for a session that's about to
+           turn out to already be connected. See setHeaderState() below. -->
+      <div class="wallet-placeholder" id="connectPlaceholder" hidden aria-hidden="true"></div>
+      <button type="button" id="connectBtn">Connect Wallet</button>
+      <appkit-button style="display:none"></appkit-button>
+      <!-- Connected-state UI for every connect path above — none of them
+           show appkit-button's own connected UI, so this stands in for
+           all of them, never alongside it. -->
+      <div class="direct-connect-pill" id="directConnectPill" hidden>
+        <div class="direct-connect-info">
+          <span id="directConnectBalance" class="direct-connect-balance"></span>
+          <span id="directConnectAddr" class="direct-connect-addr"></span>
         </div>
+        <button type="button" id="directDisconnectBtn">Disconnect</button>
       </div>
-      <!-- Secondary path, shown pre-connect only when window.ethereum
-           exists (see renderHeaderConnectionState/setHeaderState) —
-           connectBtn bypasses straight to the injected wallet by design,
-           so this is the only way to reach AppKit's own modal
-           (WalletConnect + wallet list) for someone who wants a different
-           wallet on purpose despite having one installed. Opens the exact
-           same modal the no-injected-wallet connectBtn path already uses. -->
-      <button type="button" id="useAnotherWalletLink" hidden>Use a different wallet</button>
     </div>
   </header>
 
@@ -968,9 +937,125 @@
   // a real session no matter what the extension is doing.
   console.log('[LegacyVault] AppKit initialized with networks:', Object.keys(chainDefs), '— default:', activeKey);
 
+  // Overrides EthersAdapter.connect() for non-WalletConnect connectors
+  // only (injected/EIP-6963 browser wallets) to route around a real bug:
+  // EthersAdapter.connect() aborts the WHOLE connection if
+  // wallet_switchEthereumChain fails, even after eth_requestAccounts
+  // already succeeded (confirmed on-device: appkit:CONNECT_ERROR
+  // "EthersAdapter:connect - Switch network failed"; confirmed in source
+  // at unpkg.com/@reown/appkit-adapter-ethers@1.8.23/dist/esm/src/client.js
+  // — connect() calls wallet_switchEthereumChain whenever the wallet's
+  // current chain doesn't match whatever chainId AppKit is targeting,
+  // and throws if THAT fails, discarding the accounts it already has).
+  // There is no documented public option to disable this.
+  //
+  // THIS IS AN UNDOCUMENTED INTERNAL OVERRIDE, PINNED TO 1.8.23 — all
+  // three esm.sh imports above (appkit, appkit/networks,
+  // appkit-adapter-ethers) are exact-pinned with no range for exactly
+  // this reason. It depends on: EthersAdapter.connect()'s parameter
+  // shape ({id, address, type, chainId, socialUri}), this.connectors /
+  // this.ethersProviders existing with their current shapes, and the
+  // literal connector id/type strings below (confirmed directly against
+  // @reown/appkit-common@1.8.23's ConstantsUtil.js: CONNECTOR_ID.WALLET_CONNECT
+  // = 'walletConnect', CONNECTOR_TYPE_WALLET_CONNECT = 'WALLET_CONNECT').
+  // ANY future version bump of these three packages needs this class
+  // re-verified against that version's actual client.js source before
+  // shipping — a passing smoke test is not enough, since the failure
+  // mode this guards against (the abort-on-switch-failure bug) only
+  // shows up when a wallet's current chain doesn't match AppKit's
+  // target, which won't happen on every test connect. If Reown ever
+  // fixes EthersAdapter to not abort on a failed switch, this whole
+  // class (and the plain `new EthersAdapter()` it replaces below) can
+  // go away.
+  //
+  // Fails safe, not silent: if any of the above assumptions stop holding
+  // against a future version — connect()'s shape changes, the connector
+  // type/id strings change, this.connectors isn't there, super.connect
+  // isn't a function — the catch block below falls back to this app's
+  // own independent connectDirect() path rather than leaving a dead
+  // Connect button. That fallback bypasses AppKit's adapter entirely
+  // (same as the local-dev bypass button always has), so it's reported
+  // to AppKit's own modal as a failure — but this app's own header
+  // already reflects the real, successful connection by then, since
+  // connectDirect() drives connectWithAccounts()/
+  // renderHeaderConnectionState() independently of whatever AppKit's
+  // modal does with the rejection. A degraded connect (an extra prompt,
+  // or AppKit's modal not knowing it actually succeeded) beats a dead
+  // button.
+  class SafeInjectedEthersAdapter extends EthersAdapter {
+    async connect(params) {
+      if (!params || params.id === 'walletConnect' || params.type === 'WALLET_CONNECT') {
+        return super.connect(params); // WalletConnect/QR — AppKit's own flow, untouched
+      }
+      try {
+        return await this.__legacyVaultSafeConnect(params);
+      } catch (err) {
+        if (err && err.__legacyVaultExpected) {
+          // A normal outcome of trying to connect (user declined, no
+          // provider, no accounts, or a real failure inside our own
+          // already-safe connectWithAccounts path) — not evidence this
+          // override itself is broken. Propagate as-is, same as
+          // EthersAdapter's own connect() would for the same outcome.
+          throw err;
+        }
+        window.__wcLog && window.__wcLog('SafeInjectedEthersAdapter:connect:unexpected-shape-falling-back', plainifyError(err));
+        try {
+          await connectDirect();
+        } catch (fallbackErr) {
+          window.__wcLog && window.__wcLog('SafeInjectedEthersAdapter:fallback:error', plainifyError(fallbackErr));
+        }
+        throw new Error('EthersAdapter override unavailable — used the direct connect fallback instead.');
+      }
+    }
+
+    async __legacyVaultSafeConnect(params) {
+      const connector = this.connectors && this.connectors.find(c => c.id === params.id);
+      if (!connector) { const e = new Error('Connector not found'); e.__legacyVaultExpected = true; throw e; }
+      let selectedProvider = connector.provider;
+      const ethersProvider = this.ethersProviders && this.ethersProviders[connector.id];
+      if (!selectedProvider && ethersProvider) {
+        await ethersProvider.initialize();
+        selectedProvider = await ethersProvider.getProvider();
+      }
+      if (!selectedProvider) { const e = new Error('Provider not found'); e.__legacyVaultExpected = true; throw e; }
+      connector.provider = selectedProvider;
+      let accounts;
+      try {
+        accounts = await selectedProvider.request({ method: 'eth_requestAccounts' });
+      } catch (err) {
+        err.__legacyVaultExpected = true; // user declined, or a real wallet-side error — not our bug
+        throw err;
+      }
+      if (!accounts || !accounts[0]) { const e = new Error('No accounts found'); e.__legacyVaultExpected = true; throw e; }
+      let chainIdHex;
+      try {
+        chainIdHex = await selectedProvider.request({ method: 'eth_chainId' });
+      } catch {
+        chainIdHex = '0x0';
+      }
+      try {
+        // The actual point of this override: this app's own safe connect
+        // path instead of EthersAdapter's switch-or-abort logic above.
+        // viaAppKit=true — see injectedViaAppKit's own comment for why
+        // this needs to be tracked separately from usingDirectConnect.
+        await connectWithAccounts(accounts, 'appkit-injected-intercept', selectedProvider, true);
+      } catch (err) {
+        err.__legacyVaultExpected = true;
+        throw err;
+      }
+      return {
+        address: accounts[0],
+        chainId: parseInt(chainIdHex, 16) || 0,
+        provider: selectedProvider,
+        type: params.type,
+        id: params.id
+      };
+    }
+  }
+
   try {
     const appKit = createAppKit({
-      adapters: [new EthersAdapter()],
+      adapters: [new SafeInjectedEthersAdapter()],
       // Ethereum mainnet included purely so AppKit's own EthersAdapter has
       // a real, recognized chain to reconcile against during connect() —
       // confirmed live (on-device debug log) that its internal
@@ -1078,20 +1163,27 @@
       // via EIP-6963 regardless of whether our own code ever calls
       // appKit.connect() — confirmed on-device (Zerion mobile, ?debug=1):
       // CONNECT_SUCCESS with reconnect:true fired every ~10s, 25+ times in
-      // one session, entirely on AppKit's own initiative, while
-      // connectDirect() already owned the actual connection this app used.
-      // No documented option in this SDK version (checked: AppKitOptions,
-      // Features) disables AppKit's own injected/EIP-6963 detection
-      // outright, so this reacts to it instead — but ONLY when
-      // usingDirectConnect is true, i.e. a direct-connect session already
-      // owns the connection and this is a genuinely competing one. Gating
-      // on "an injected wallet merely exists" instead (an earlier version
-      // of this check) was wrong: a user can have an injected wallet
-      // installed and still deliberately choose WalletConnect/QR via the
-      // header's "Use a different wallet" link — that's a real AppKit
-      // session the user asked for, not a competing one, and usingDirectConnect
-      // stays false for it, so this correctly leaves it alone.
-      if (eventName === 'CONNECT_SUCCESS' && usingDirectConnect) {
+      // one session, entirely on AppKit's own initiative, while a direct
+      // eth_accounts auto-reconnect (tryAutoReconnect) already owned the
+      // actual connection this app used. No documented option in this SDK
+      // version (checked: AppKitOptions, Features) disables AppKit's own
+      // injected/EIP-6963 detection outright, so this reacts to it
+      // instead — but ONLY when usingDirectConnect is true AND
+      // injectedViaAppKit is false. Gating on usingDirectConnect alone
+      // would be wrong now: SafeInjectedEthersAdapter's intercept (see
+      // above) ALSO sets usingDirectConnect true for an injected wallet
+      // picked through AppKit's own modal, and it does so BEFORE AppKit's
+      // controllers fire this exact CONNECT_SUCCESS for that same,
+      // just-completed, entirely deliberate connection — checking only
+      // usingDirectConnect would disconnect the very session the user
+      // just asked for, immediately after making it. injectedViaAppKit
+      // is what actually distinguishes "this CONNECT_SUCCESS IS the
+      // deliberate AppKit-modal connection that just set usingDirectConnect"
+      // from "this CONNECT_SUCCESS is AppKit reconnecting on its own,
+      // unasked, while a completely separate, non-AppKit session (from
+      // tryAutoReconnect's raw eth_accounts call) already owns things" —
+      // only the second is the actual bug this guard exists for.
+      if (eventName === 'CONNECT_SUCCESS' && usingDirectConnect && !injectedViaAppKit) {
         window.__wcLog && window.__wcLog('appkit:auto-reconnect-detected-disconnecting', event?.data?.properties);
         appKit.disconnect().catch(err => window.__wcLog && window.__wcLog('appkit:disconnect-after-auto-reconnect:error', plainifyError(err)));
       }
@@ -1310,7 +1402,24 @@
 
   const $ = id => document.getElementById(id);
   let provider, signer, contract, readContract, myAddress;
-  let usingDirectConnect = false; // true when connected via connectDirect() rather than AppKit
+  let usingDirectConnect = false; // true when connected via connectWithAccounts (bypassing AppKit's own connect logic), rather than AppKit's own WalletConnect flow
+  // True only when the current usingDirectConnect session was established
+  // THROUGH AppKit's own modal — specifically, a browser/injected wallet
+  // picked there and intercepted by SafeInjectedEthersAdapter (module
+  // script above), which still routes into connectWithAccounts but does
+  // so as part of AppKit's own connect() call resolving successfully.
+  // AppKit legitimately believes it owns that connector's session in this
+  // case, unlike a usingDirectConnect session from tryAutoReconnect's raw
+  // eth_accounts call, which AppKit knows nothing about at all. Matters
+  // for exactly one thing: the reconnect-loop guard in subscribeEvents
+  // below needs to tell "this CONNECT_SUCCESS IS the deliberate
+  // AppKit-modal connection that just set usingDirectConnect true" apart
+  // from "this CONNECT_SUCCESS is AppKit reconnecting on its own, unasked,
+  // while a completely separate (non-AppKit) usingDirectConnect session
+  // already owns things" — usingDirectConnect alone can no longer
+  // distinguish those two cases now that an AppKit-modal pick also sets
+  // it, so this flag is what the guard actually keys on.
+  let injectedViaAppKit = false;
   // True for the ENTIRE window a direct-connect attempt is being resolved
   // — from the first RPC call (eth_accounts or eth_requestAccounts) through
   // connectWithEth() finishing, success or failure. usingDirectConnect only
@@ -1986,6 +2095,7 @@
     window.__wcLog && window.__wcLog('clearConnectionState', { myAddressWas: myAddress, usingDirectConnectWas: usingDirectConnect, at: shortStack() });
     provider = signer = contract = myAddress = currentEth = undefined;
     usingDirectConnect = false;
+    injectedViaAppKit = false;
     $('createBtn').disabled = true;
     $('findBtn').disabled = true;
     $('lookupBtn').disabled = true;
@@ -2007,10 +2117,6 @@
     $('connectPlaceholder').hidden = state !== 'unknown';
     $('connectBtn').style.display = state === 'disconnected' ? '' : 'none';
     $('directConnectPill').hidden = state !== 'connected';
-    // Only reachable pre-connect, and only when connectBtn actually
-    // bypassed something — with no injected wallet, connectBtn already
-    // opens this same AppKit modal, so the link would just duplicate it.
-    $('useAnotherWalletLink').hidden = !(state === 'disconnected' && typeof window.ethereum !== 'undefined');
     if (state !== 'unknown' && headerUnknownTimer) { clearTimeout(headerUnknownTimer); headerUnknownTimer = null; }
   }
 
@@ -2477,10 +2583,16 @@
     }
   };
 
-  // Shared finish for both the button-click path (eth_requestAccounts,
-  // which can prompt) and the silent auto-reconnect path (eth_accounts,
-  // which never prompts) — everything past "we have an authorized
-  // account" is identical either way.
+  // Shared finish for the button-click path (eth_requestAccounts, which
+  // can prompt), the silent auto-reconnect path (eth_accounts, which
+  // never prompts), and SafeInjectedEthersAdapter's intercepted
+  // AppKit-modal path below — everything past "we have an authorized
+  // account" is identical in all three. eth defaults to window.ethereum
+  // for the first two; SafeInjectedEthersAdapter passes the SPECIFIC
+  // connector's own provider instead, which matters when more than one
+  // wallet is installed and the user picked one by name in AppKit's
+  // modal — window.ethereum could resolve to a different extension than
+  // the one actually selected.
   //
   // usingDirectConnect is set true BEFORE awaiting connectWithEth, not
   // after — found by reproducing a real race: connectWithEth makes
@@ -2495,25 +2607,33 @@
   // Wallet a moment after a fully successful connect. Setting the flag
   // first closes that window entirely, and any AppKit event that lands
   // mid-connect now correctly defers instead.
-  async function connectWithAccounts(accounts, source) {
+  // viaAppKit: pass true only from SafeInjectedEthersAdapter's intercept
+  // (an injected wallet picked through AppKit's own modal) — see
+  // injectedViaAppKit's own comment for why this needs to be tracked
+  // separately from usingDirectConnect itself.
+  async function connectWithAccounts(accounts, source, eth, viaAppKit) {
     if (!accounts || !accounts[0]) throw new Error('No account returned by wallet.');
     usingDirectConnect = true;
+    injectedViaAppKit = viaAppKit === true;
     try {
-      const netKey = await connectWithEth(window.ethereum, accounts[0]);
+      const netKey = await connectWithEth(eth || window.ethereum, accounts[0]);
       renderHeaderConnectionState();
-      window.__wcLog && window.__wcLog('account:ready (' + source + ')', { address: myAddress, network: netKey });
+      window.__wcLog && window.__wcLog('account:ready (' + source + ')', { address: myAddress, network: netKey, viaAppKit: injectedViaAppKit });
     } catch (err) {
       usingDirectConnect = false;
+      injectedViaAppKit = false;
       throw err;
     }
   }
 
   // Bypasses AppKit entirely: talks straight to window.ethereum with
   // eth_requestAccounts, no wallet_switchEthereumChain, no AppKit session
-  // cache. Exists because AppKit's connect flow was found to actively
-  // force the wallet onto its configured default network rather than
-  // adopting whatever chain it's already on — this sidesteps that
-  // completely rather than depending on a fix to AppKit's behavior.
+  // cache. Two callers now: the local-dev "bypass AppKit" banner button
+  // (directConnectBtn, for a Hardhat node AppKit doesn't recognize), and
+  // SafeInjectedEthersAdapter's structural fallback (module script above)
+  // if its override of AppKit's connect() ever breaks against a future
+  // SDK version — see that class's comment. No longer connectBtn's own
+  // primary path; that always opens AppKit's modal now.
   async function connectDirect() {
     // First line, unconditionally — confirms the click handler actually
     // fired at all, before anything else has a chance to throw or return
@@ -2584,63 +2704,52 @@
     }
   }
   // There's no universal EIP-1193 "revoke" call an injected provider is
-  // guaranteed to support — for a direct-connect session this clears the
-  // app's own state only; the extension itself stays connected until the
-  // user disconnects it there too. An AppKit/WalletConnect session DOES
-  // have a real disconnect call, and skipping it would leave AppKit's
-  // persisted session to silently reconnect on the next page load.
+  // guaranteed to support — this clears the app's own state regardless;
+  // the extension itself stays connected until the user disconnects it
+  // there too. appKit.disconnect() is now attempted unconditionally
+  // (rather than only when !usingDirectConnect, as before) — since
+  // SafeInjectedEthersAdapter routes an AppKit-modal-picked injected
+  // wallet through connectWithAccounts too (usingDirectConnect ends up
+  // true for that case exactly like the old direct-bypass path), AppKit
+  // itself now believes it owns that connector's session and needs its
+  // own bookkeeping torn down, not just this app's local state — skipping
+  // that would leave AppKit's persisted session to silently reconnect on
+  // the next page load even after the user explicitly disconnected here.
+  // Calling it when AppKit has nothing connected (a pure eth_accounts
+  // auto-reconnect session it was never involved in) is a safe no-op —
+  // EthersAdapter.disconnect() with no active connections just returns
+  // cleanly.
   $('directDisconnectBtn').addEventListener('click', async () => {
-    if (!usingDirectConnect && window.__legacyVaultAppKit && window.__legacyVaultAppKit.getIsConnectedState()) {
+    if (window.__legacyVaultAppKit) {
       try { await window.__legacyVaultAppKit.disconnect(); } catch (err) { window.__wcLog && window.__wcLog('appkit:disconnect:error', plainifyError(err)); }
     }
     clearConnectionState();
     hideWrongNetworkBanner();
   });
 
-  // Shared by connectBtn's no-injected-wallet fallback and
-  // useAnotherWalletLink (both ultimately want the same thing: AppKit's
-  // modal, opened only once actually requested).
-  function openAppKitModal(source) {
-    window.__wcLog && window.__wcLog(source + ':open-appkit-modal', { appKitReady: !!window.__legacyVaultAppKit });
-    if (window.__legacyVaultAppKit) {
-      window.__legacyVaultAppKit.open();
-    } else {
-      // AppKit's module (esm.sh) hasn't finished loading yet — rare.
-      // Transient, tied to this one click, not a standing banner.
-      note($('createMsg'), 'Still loading wallet options — try again in a moment.', 'err');
-    }
-  }
-
   // The one connect button, wired once, unconditionally — no AppKit
-  // readiness wait, no separate no-wallet branch in the markup. It
-  // branches internally, at the moment of the click rather than at page
-  // load, since that's the only point window.ethereum's presence actually
-  // needs to be checked: an injected wallet (extension, or a wallet app's
-  // own in-app browser) connects directly, bypassing AppKit's connect()
-  // entirely (that path was found to abort the whole connection on its
-  // own internal network-reconciliation switch failure — see
-  // connectDirect's comment). With no injected wallet, this opens AppKit's
-  // own modal (WalletConnect session + wallet list) instead — the "small
-  // modal with wallet options" a user with nothing installed needs, shown
-  // only once they've actually tapped, not before.
-  //
-  // useAnotherWalletLink exists for the remaining case: an injected
-  // wallet IS present, so connectBtn always bypasses straight to it, but
-  // a user who wants WalletConnect/QR on purpose despite having a browser
-  // wallet installed still needs a way in — this opens the exact same
-  // AppKit modal, just from a visibly secondary control rather than the
-  // primary button, and only shown pre-connect (setHeaderState).
+  // readiness wait needed to make it clickable. Always opens AppKit's own
+  // modal (wallet list + WalletConnect QR): one button, one flow,
+  // everywhere, same as it already behaved on Safari with no injected
+  // wallet. Picking a browser/injected wallet from that modal is
+  // intercepted by SafeInjectedEthersAdapter (module script above) so it
+  // still runs through connectWithAccounts/connectWithEth instead of
+  // AppKit's own adapter connect, which aborts the whole connection if
+  // its internal network-reconciliation switch fails. Picking
+  // WalletConnect/QR goes through AppKit entirely untouched. The user
+  // never sees which branch ran.
   window.__recordEarly('connect-ui:before-setup', { hasInjectedWallet: typeof window.ethereum !== 'undefined' });
   try {
     $('connectBtn').addEventListener('click', () => {
       window.__wcLog && window.__wcLog('connectBtn:click', { hasInjectedWallet: typeof window.ethereum !== 'undefined', appKitReady: !!window.__legacyVaultAppKit });
-      if (typeof window.ethereum !== 'undefined') {
-        connectDirect();
+      if (window.__legacyVaultAppKit) {
+        window.__legacyVaultAppKit.open();
       } else {
-        openAppKitModal('connectBtn');
+        // AppKit's module (esm.sh) hasn't finished loading yet — rare.
+        // Transient, tied to this one click, not a standing banner.
+        note($('createMsg'), 'Still loading wallet options — try again in a moment.', 'err');
       }
     });
-    $('useAnotherWalletLink').addEventListener('click', () => openAppKitModal('useAnotherWalletLink'));
     window.__recordEarly('connect-ui:setup-complete', { connectBtnPresent: !!document.getElementById('connectBtn') });
   } catch (err) {
     // Never silently swallow this — if wiring the one connect button
